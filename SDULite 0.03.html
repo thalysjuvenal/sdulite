@@ -223,6 +223,7 @@
       <button class="btn btn-ghost" id="btn-add-row" disabled>＋ Nova Linha</button>
       <button class="btn btn-ghost" id="btn-replicate" disabled>⧉ Replicar Linhas</button>
       <button class="btn btn-danger" id="btn-delete-rows" disabled>✕ Deletar Seleção</button>
+      <button class="btn btn-ghost" id="btn-formula" disabled>ƒ Formula</button>
       <div class="toolbar-sep"></div>
       <button class="btn btn-ghost" id="btn-readonly" disabled>🔒 Somente Leitura</button>
       <label for="file-input" class="btn btn-primary">📂 Abrir arquivo</label>
@@ -367,6 +368,42 @@
   </div>
 </div>
 
+<!-- Formula Modal -->
+<div class="modal-overlay hidden" id="modal-formula">
+  <div class="modal">
+    <h3>Transformar Coluna</h3>
+    <div class="form-group">
+      <label>Coluna</label>
+      <select id="formula-col"></select>
+    </div>
+    <div class="form-group">
+      <label>Transformacao</label>
+      <select id="formula-type">
+        <option value="upper">MAIUSCULAS (UPPER)</option>
+        <option value="lower">minusculas (LOWER)</option>
+        <option value="trim">Remover espacos (TRIM)</option>
+        <option value="replace">Substituir texto</option>
+        <option value="prefix">Adicionar prefixo</option>
+        <option value="suffix">Adicionar sufixo</option>
+        <option value="math-add">Somar valor</option>
+        <option value="math-mul">Multiplicar por</option>
+      </select>
+    </div>
+    <div class="form-group" id="formula-param-group" style="display:none;">
+      <label id="formula-param-label">Valor</label>
+      <input type="text" id="formula-param" />
+    </div>
+    <div class="form-group" id="formula-param2-group" style="display:none;">
+      <label>Substituir por</label>
+      <input type="text" id="formula-param2" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="formula-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="formula-apply">Aplicar</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file-input" accept=".sqlite,.db,.sqlite3" />
 
 <script>
@@ -440,6 +477,10 @@ document.getElementById('global-search-close').addEventListener('click', () => d
 document.getElementById('global-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') runGlobalSearch();
 });
+document.getElementById('btn-formula').addEventListener('click', openFormula);
+document.getElementById('formula-cancel').addEventListener('click', () => document.getElementById('modal-formula').classList.add('hidden'));
+document.getElementById('formula-apply').addEventListener('click', applyFormula);
+document.getElementById('formula-type').addEventListener('change', updateFormulaParams);
 
 document.getElementById('review-cancel').addEventListener('click', () => {
   document.getElementById('modal-review').classList.add('hidden');
@@ -481,7 +522,7 @@ function toggleReadOnly() {
   btn.classList.toggle('btn-ghost', !readOnlyMode);
 
   // Disable/enable action buttons
-  const actionBtns = ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore'];
+  const actionBtns = ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-formula','btn-restore'];
   actionBtns.forEach(id => {
     const el = document.getElementById(id);
     if (readOnlyMode) el.setAttribute('disabled', '');
@@ -585,7 +626,7 @@ function loadTable(tableName) {
   document.getElementById('footer-table').textContent = tableName;
   document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
   document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
-  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search','btn-bookmark','btn-bookmarks','btn-export'].forEach(id =>
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-formula','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search','btn-bookmark','btn-bookmarks','btn-export'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
   const importLabel = document.getElementById('btn-import-label');
@@ -996,6 +1037,71 @@ function revertHistoryItem(index) {
     updateChangesPill();
     toast('Alteracao revertida', 'success');
   }
+}
+
+// ── FORMULA ────────────────────────────────────────────────────────────────
+function openFormula() {
+  if (!currentTable) return;
+  const cols = columnDefs.slice(1).map(c => c.field);
+  document.getElementById('formula-col').innerHTML = cols.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('formula-param').value = '';
+  document.getElementById('formula-param2').value = '';
+  updateFormulaParams();
+  document.getElementById('modal-formula').classList.remove('hidden');
+}
+
+function updateFormulaParams() {
+  const type = document.getElementById('formula-type').value;
+  const p1 = document.getElementById('formula-param-group');
+  const p2 = document.getElementById('formula-param2-group');
+  const label = document.getElementById('formula-param-label');
+  p1.style.display = 'none'; p2.style.display = 'none';
+  if (type === 'replace') { p1.style.display = ''; p2.style.display = ''; label.textContent = 'Buscar'; }
+  else if (type === 'prefix' || type === 'suffix') { p1.style.display = ''; label.textContent = 'Texto'; }
+  else if (type.startsWith('math-')) { p1.style.display = ''; label.textContent = 'Valor numerico'; }
+}
+
+function applyFormula() {
+  const col = document.getElementById('formula-col').value;
+  const type = document.getElementById('formula-type').value;
+  const param = document.getElementById('formula-param').value;
+  const param2 = document.getElementById('formula-param2').value;
+
+  const batch = [], toUpdate = [];
+  gridApi.forEachNode(node => {
+    const oldValue = node.data[col];
+    let newValue = oldValue;
+    const str = String(oldValue ?? '');
+    switch(type) {
+      case 'upper': newValue = str.toUpperCase(); break;
+      case 'lower': newValue = str.toLowerCase(); break;
+      case 'trim': newValue = str.trim(); break;
+      case 'replace': newValue = str.split(param).join(param2); break;
+      case 'prefix': newValue = param + str; break;
+      case 'suffix': newValue = str + param; break;
+      case 'math-add': newValue = (parseFloat(oldValue) || 0) + (parseFloat(param) || 0); break;
+      case 'math-mul': newValue = (parseFloat(oldValue) || 0) * (parseFloat(param) || 1); break;
+    }
+    if (newValue !== oldValue) {
+      batch.push({ rowIndex: node.rowIndex, colField: col, oldValue, newValue, dataIndex: node.data.__rowIndex });
+      node.data[col] = newValue;
+      toUpdate.push(node.data);
+      if (node.data.__rowIndex !== undefined) {
+        if (!pendingChanges.has(node.data.__rowIndex)) pendingChanges.set(node.data.__rowIndex, {});
+        pendingChanges.get(node.data.__rowIndex)[col] = newValue;
+      }
+      addToHistory(currentTable, col, node.data.__rowIndex, oldValue, newValue);
+    }
+  });
+
+  if (batch.length) {
+    undoStack.push({ batch }); redoStack = [];
+    gridApi.applyTransaction({ update: toUpdate });
+    updateChangesPill();
+    updateUndoPill();
+  }
+  document.getElementById('modal-formula').classList.add('hidden');
+  toast(`Formula aplicada: ${batch.length} celula(s) alterada(s)`, batch.length > 0 ? 'success' : 'info');
 }
 
 // ── UNDO / REDO ───────────────────────────────────────────────────────────────
