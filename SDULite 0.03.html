@@ -417,6 +417,26 @@
   </div>
 </div>
 
+<!-- Replicate Modal -->
+<div class="modal-overlay hidden" id="modal-replicate">
+  <div class="modal">
+    <h3>Replicar Linhas</h3>
+    <div class="form-group">
+      <label>Quantidade de copias por linha</label>
+      <input type="number" id="replicate-count" value="1" min="1" max="100" />
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">Regras de Incremento</div>
+      <div id="increment-rules"></div>
+      <button class="btn btn-ghost" style="margin-top:8px;font-size:11px;" id="add-increment-rule">+ Adicionar regra</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="replicate-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="replicate-confirm">Replicar</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file-input" accept=".sqlite,.db,.sqlite3" />
 
 <script>
@@ -498,6 +518,9 @@ document.getElementById('formula-type').addEventListener('change', updateFormula
 document.getElementById('btn-templates').addEventListener('click', showTemplates);
 document.getElementById('templates-close').addEventListener('click', () => document.getElementById('modal-templates').classList.add('hidden'));
 document.getElementById('fr-save-template').addEventListener('click', saveTemplate);
+document.getElementById('replicate-cancel').addEventListener('click', () => document.getElementById('modal-replicate').classList.add('hidden'));
+document.getElementById('replicate-confirm').addEventListener('click', executeReplication);
+document.getElementById('add-increment-rule').addEventListener('click', () => addIncrementRule());
 
 document.getElementById('review-cancel').addEventListener('click', () => {
   document.getElementById('modal-review').classList.add('hidden');
@@ -869,45 +892,85 @@ function replicateRows() {
   const selected = gridApi.getSelectedRows();
   if (!selected.length) { toast('Selecione linhas para replicar', 'info'); return; }
 
+  const cols = columnDefs.slice(1).map(c => c.field);
+  document.getElementById('increment-rules').innerHTML = '';
+  document.getElementById('replicate-count').value = '1';
+
+  // Auto-add R_E_C_N_O_ rule if exists
+  if (cols.includes('R_E_C_N_O_')) addIncrementRule('R_E_C_N_O_', 1);
+
+  document.getElementById('modal-replicate').classList.remove('hidden');
+}
+
+function addIncrementRule(presetCol, presetStep) {
+  const cols = columnDefs.slice(1).map(c => c.field);
+  const div = document.createElement('div');
+  div.className = 'modal-row';
+  div.style.marginBottom = '6px';
+  div.innerHTML = `
+    <select class="inline-select rule-col">${cols.map(c => `<option value="${c}" ${c===presetCol?'selected':''}>${c}</option>`).join('')}</select>
+    <span style="color:var(--text-muted);font-size:11px;flex-shrink:0;">+</span>
+    <input type="number" class="inline-input rule-step" value="${presetStep||1}" style="width:80px;" />
+    <button class="btn btn-ghost" style="padding:4px 8px;" onclick="this.parentElement.remove()">✕</button>
+  `;
+  document.getElementById('increment-rules').appendChild(div);
+}
+
+function executeReplication() {
+  if (!gridApi || !currentTable) return;
+  const selected = gridApi.getSelectedRows();
+  const copyCount = parseInt(document.getElementById('replicate-count').value) || 1;
+
+  // Parse rules
+  const rules = [];
+  document.querySelectorAll('#increment-rules .modal-row').forEach(row => {
+    rules.push({
+      col: row.querySelector('.rule-col').value,
+      step: parseFloat(row.querySelector('.rule-step').value) || 1
+    });
+  });
+
   try {
     const cols = columnDefs.slice(1).map(c => c.field);
-    const hasRecno = cols.includes('R_E_C_N_O_');
-
-    // Get current max R_E_C_N_O_
-    let maxRecno = 0;
-    if (hasRecno) {
-      const res = db.exec(`SELECT MAX("R_E_C_N_O_") FROM "${currentTable}"`);
-      maxRecno = res[0]?.values[0][0] ?? 0;
-    }
-
     const colInfo = db.exec(`PRAGMA table_info("${currentTable}")`)[0]?.values ?? [];
+
+    // Get max values for increment cols
+    const maxVals = {};
+    rules.forEach(rule => {
+      const res = db.exec(`SELECT MAX(CAST("${rule.col}" AS REAL)) FROM "${currentTable}"`);
+      maxVals[rule.col] = res[0]?.values[0][0] ?? 0;
+    });
 
     db.run('BEGIN TRANSACTION');
     try {
       selected.forEach(row => {
-        maxRecno++;
-        const insertCols = [], insertVals = [];
-        cols.forEach(col => {
-          const info    = colInfo.find(r => r[1] === col);
-          const isPk    = info?.[5] > 0;
-          if (isPk) return; // skip autoincrement PK
-          insertCols.push(`"${col}"`);
-          if (col === 'R_E_C_N_O_') {
-            insertVals.push(maxRecno);
-          } else {
-            insertVals.push(row[col] ?? null);
-          }
-        });
-        db.run(
-          `INSERT INTO "${currentTable}" (${insertCols.join(',')}) VALUES (${insertCols.map(()=>'?').join(',')})`,
-          insertVals
-        );
+        for (let copy = 0; copy < copyCount; copy++) {
+          const insertCols = [], insertVals = [];
+          cols.forEach(col => {
+            const info = colInfo.find(r => r[1] === col);
+            const isPk = info?.[5] > 0;
+            if (isPk) return;
+            insertCols.push(`"${col}"`);
+            const rule = rules.find(r => r.col === col);
+            if (rule) {
+              maxVals[col] += rule.step;
+              insertVals.push(maxVals[col]);
+            } else {
+              insertVals.push(row[col] ?? null);
+            }
+          });
+          db.run(
+            `INSERT INTO "${currentTable}" (${insertCols.join(',')}) VALUES (${insertCols.map(()=>'?').join(',')})`,
+            insertVals
+          );
+        }
       });
       db.run('COMMIT');
     } catch(e) { db.run('ROLLBACK'); throw e; }
 
+    document.getElementById('modal-replicate').classList.add('hidden');
     loadTable(currentTable);
-    toast(`${selected.length} linha(s) replicada(s) ✓`, 'success');
+    toast(`${selected.length * copyCount} linha(s) replicada(s)`, 'success');
   } catch(e) { toast('Erro ao replicar: ' + e.message, 'error'); }
 }
 
