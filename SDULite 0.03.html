@@ -474,7 +474,7 @@ function loadTable(tableName) {
     el.classList.toggle('active', el.dataset.name === tableName)
   );
 
-  const result = db.exec(`SELECT * FROM "${tableName}" LIMIT 5000`);
+  const result = db.exec(`SELECT * FROM "${tableName}"`);
   const cols = result.length ? result[0].columns : [];
   const rows = result.length ? result[0].values : [];
 
@@ -511,6 +511,9 @@ function renderGrid(colDefs, rowData) {
   agGrid.createGrid(gridEl, {
     columnDefs: colDefs,
     rowData: rowData,
+    pagination: true,
+    paginationPageSize: 500,
+    paginationPageSizeSelector: [100, 250, 500, 1000, 5000],
     rowSelection: 'multiple',
     suppressRowClickSelection: true,
     enableBrowserTooltips: true,
