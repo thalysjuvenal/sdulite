@@ -131,6 +131,7 @@
     }
     .ag-theme-alpine-dark .ag-header-cell-text { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
     .ag-theme-alpine-dark .ag-cell.ag-cell-focus { border: 1px solid #aaaaaa !important; }
+    .ag-theme-alpine-dark .ag-filter { background: var(--surface) !important; border: 1px solid var(--border) !important; }
     .cell-modified {
       background: rgba(200, 180, 50, 0.12) !important;
       border-left: 2px solid rgba(200, 180, 50, 0.6) !important;
@@ -477,11 +478,22 @@ function loadTable(tableName) {
   const result = db.exec(`SELECT * FROM "${tableName}"`);
   const cols = result.length ? result[0].columns : [];
   const rows = result.length ? result[0].values : [];
+  const colInfo = db.exec(`PRAGMA table_info("${tableName}")`)[0]?.values ?? [];
 
   columnDefs = [
     { headerCheckboxSelection: true, checkboxSelection: true, width: 48, pinned: 'left',
       resizable: false, sortable: false, filter: false, editable: false, suppressHeaderMenuButton: true },
-    ...cols.map(col => ({ field: col, headerName: col, editable: true, resizable: true, sortable: true, filter: true, minWidth: 100, flex: 1 }))
+    ...cols.map(col => {
+      const info = colInfo.find(r => r[1] === col);
+      const type = (info?.[2] ?? '').toUpperCase();
+      const isNumeric = type.includes('INT') || type.includes('REAL') || type.includes('NUM') || type.includes('FLOAT');
+      return {
+        field: col, headerName: col, editable: !readOnlyMode, resizable: true, sortable: true,
+        filter: isNumeric ? 'agNumberColumnFilter' : 'agTextColumnFilter',
+        filterParams: isNumeric ? {} : { filterOptions: ['contains','notContains','equals','notEqual','startsWith','endsWith','blank','notBlank'] },
+        minWidth: 100, flex: 1
+      };
+    })
   ];
 
   const rowData = rows.map((row, i) => {
