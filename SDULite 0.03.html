@@ -160,6 +160,7 @@
       <div class="toolbar-sep"></div>
       <label for="file-input" class="btn btn-primary">📂 Abrir arquivo</label>
       <button class="btn btn-success" id="btn-save" disabled>💾 Salvar</button>
+      <button class="btn btn-danger" id="btn-restore" disabled>↩ Restaurar Original</button>
     </div>
   </header>
 
@@ -250,6 +251,7 @@ let pendingChanges = new Map();
 let columnDefs = [];
 let fileName = '';
 let undoStack = [], redoStack = [], isUndoRedo = false;
+let originalDbBytes = null; // backup do arquivo original
 
 // ── INIT SQL.JS ───────────────────────────────────────────────────────────────
 initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${f}` })
@@ -279,6 +281,7 @@ document.getElementById('btn-add-row').addEventListener('click', addRow);
 document.getElementById('btn-replicate').addEventListener('click', replicateRows);
 document.getElementById('btn-delete-rows').addEventListener('click', deleteSelectedRows);
 document.getElementById('btn-find-replace').addEventListener('click', openFindReplace);
+document.getElementById('btn-restore').addEventListener('click', restoreOriginal);
 document.getElementById('quick-filter').addEventListener('input', e => {
   if (gridApi) gridApi.setGridOption('quickFilterText', e.target.value);
 });
@@ -293,6 +296,7 @@ function loadFile(file) {
   reader.onload = e => {
     try {
       db = new SQL.Database(new Uint8Array(e.target.result));
+      originalDbBytes = new Uint8Array(e.target.result).slice(); // copia independente
       document.getElementById('footer-file').textContent = file.name;
       document.getElementById('status-badge').textContent = file.name;
       document.getElementById('status-badge').classList.add('loaded');
@@ -356,7 +360,7 @@ function loadTable(tableName) {
   document.getElementById('footer-table').textContent = tableName;
   document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
   document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
-  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace'].forEach(id =>
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
 }
@@ -434,6 +438,18 @@ function saveFile() {
     toast('Arquivo salvo com sucesso!', 'success');
     loadTables();
   } catch(e) { toast('Erro ao salvar: ' + e.message, 'error'); }
+}
+
+// ── RESTORE ORIGINAL ──────────────────────────────────────────────────────────
+function restoreOriginal() {
+  if (!originalDbBytes || !SQL) return;
+  if (!confirm('Restaurar o banco ao estado original? Todas as alteracoes serao perdidas.')) return;
+  db = new SQL.Database(originalDbBytes.slice());
+  pendingChanges.clear();
+  undoStack = []; redoStack = [];
+  updateChangesPill();
+  loadTables();
+  toast('Banco restaurado ao estado original', 'success');
 }
 
 // ── ADD ROW ───────────────────────────────────────────────────────────────────
