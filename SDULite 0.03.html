@@ -222,6 +222,9 @@
         <span class="changes-pill" id="changes-pill">
           ● <span id="changes-count">0</span> alterações pendentes
         </span>
+        <span class="changes-pill" id="undo-pill" style="display:none;">
+          ↩ <span id="undo-count">0</span> | ↪ <span id="redo-count">0</span>
+        </span>
       </div>
 
       <div class="grid-wrapper">
@@ -465,6 +468,7 @@ function loadTable(tableName) {
   originalValues.clear();
   undoStack = []; redoStack = [];
   updateChangesPill();
+  updateUndoPill();
 
   document.querySelectorAll('.table-item').forEach(el =>
     el.classList.toggle('active', el.dataset.name === tableName)
@@ -552,6 +556,7 @@ function onCellChanged(params) {
   pendingChanges.get(idx)[params.colDef.field] = params.newValue;
   updateChangesPill();
   addToHistory(currentTable, params.colDef.field, idx, params.oldValue, params.newValue);
+  updateUndoPill();
 }
 
 // ── CHANGES PILL ──────────────────────────────────────────────────────────────
@@ -560,6 +565,14 @@ function updateChangesPill() {
   const count = pendingChanges.size;
   pill.classList.toggle('visible', count > 0);
   document.getElementById('changes-count').textContent = count;
+}
+
+function updateUndoPill() {
+  const pill = document.getElementById('undo-pill');
+  const hasItems = undoStack.length > 0 || redoStack.length > 0;
+  pill.style.display = hasItems ? 'flex' : 'none';
+  document.getElementById('undo-count').textContent = undoStack.length;
+  document.getElementById('redo-count').textContent = redoStack.length;
 }
 
 // ── SAVE FILE ─────────────────────────────────────────────────────────────────
@@ -868,6 +881,7 @@ function undoLast() {
   const changes = entry.batch || [entry];
   applyUndoRedoChanges(changes, 'old');
   toast(`Desfeito ✓ (${changes.length} célula${changes.length > 1 ? 's' : ''})`, 'info');
+  updateUndoPill();
 }
 
 function redoLast() {
@@ -876,6 +890,7 @@ function redoLast() {
   const changes = entry.batch || [entry];
   applyUndoRedoChanges(changes, 'new');
   toast(`Refeito ✓ (${changes.length} célula${changes.length > 1 ? 's' : ''})`, 'info');
+  updateUndoPill();
 }
 
 function applyUndoRedoChanges(changes, direction) {
