@@ -230,6 +230,7 @@
       <button class="btn btn-ghost" id="btn-history" disabled>📋 Historico</button>
       <button class="btn btn-ghost" id="btn-sql" disabled>⌘ SQL</button>
       <button class="btn btn-danger" id="btn-restore" disabled>↩ Restaurar Original</button>
+      <button class="btn btn-ghost" id="btn-export" disabled>📤 Exportar CSV</button>
     </div>
   </header>
 
@@ -427,6 +428,7 @@ document.getElementById('fr-apply').addEventListener('click', applyFindReplace);
 document.getElementById('btn-global-search').addEventListener('click', openGlobalSearch);
 document.getElementById('btn-bookmark').addEventListener('click', bookmarkSelected);
 document.getElementById('btn-bookmarks').addEventListener('click', showBookmarks);
+document.getElementById('btn-export').addEventListener('click', exportCsv);
 document.getElementById('global-search-close').addEventListener('click', () => document.getElementById('modal-search').classList.add('hidden'));
 document.getElementById('global-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') runGlobalSearch();
@@ -576,7 +578,7 @@ function loadTable(tableName) {
   document.getElementById('footer-table').textContent = tableName;
   document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
   document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
-  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search','btn-bookmark','btn-bookmarks'].forEach(id =>
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search','btn-bookmark','btn-bookmarks','btn-export'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
 }
@@ -1523,6 +1525,29 @@ function jumpToBookmark(index) {
 function removeBookmark(index) {
   bookmarks.splice(index, 1);
   showBookmarks();
+}
+
+// ── EXPORT CSV ─────────────────────────────────────────────────────────────
+function exportCsv() {
+  if (!gridApi || !currentTable) return;
+  const cols = columnDefs.slice(1).map(c => c.field);
+  let csv = cols.join(';') + '\n';
+  gridApi.forEachNodeAfterFilterAndSort(node => {
+    csv += cols.map(c => {
+      const val = String(node.data[c] ?? '');
+      return val.includes(';') || val.includes('"') || val.includes('\n')
+        ? '"' + val.replace(/"/g, '""') + '"'
+        : val;
+    }).join(';') + '\n';
+  });
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: `${currentTable}.csv`
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast(`Exportado: ${currentTable}.csv`, 'success');
 }
 </script>
 </body>
