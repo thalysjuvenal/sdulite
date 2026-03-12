@@ -131,6 +131,10 @@
     }
     .ag-theme-alpine-dark .ag-header-cell-text { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
     .ag-theme-alpine-dark .ag-cell.ag-cell-focus { border: 1px solid #aaaaaa !important; }
+    .cell-modified {
+      background: rgba(200, 180, 50, 0.12) !important;
+      border-left: 2px solid rgba(200, 180, 50, 0.6) !important;
+    }
 
     /* Fill Handle */
     .fill-handle-dot { position: fixed; width: 8px; height: 8px; background: #cccccc; border: 2px solid #111; border-radius: 1px; cursor: crosshair; z-index: 200; pointer-events: all; box-shadow: 0 0 6px rgba(200,200,200,0.4); }
@@ -254,6 +258,7 @@ let fileName = '';
 let undoStack = [], redoStack = [], isUndoRedo = false;
 let originalDbBytes = null; // backup do arquivo original
 let readOnlyMode = false;
+let originalValues = new Map(); // Map<"rowIndex:colField", originalValue>
 
 // ── INIT SQL.JS ───────────────────────────────────────────────────────────────
 initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${f}` })
@@ -364,6 +369,7 @@ function loadTables() {
 function loadTable(tableName) {
   currentTable = tableName;
   pendingChanges.clear();
+  originalValues.clear();
   undoStack = []; redoStack = [];
   updateChangesPill();
 
@@ -410,7 +416,26 @@ function renderGrid(colDefs, rowData) {
     rowData: rowData,
     rowSelection: 'multiple',
     suppressRowClickSelection: true,
-    defaultColDef: { resizable: true, sortable: true, filter: true },
+    enableBrowserTooltips: true,
+    defaultColDef: {
+      resizable: true, sortable: true, filter: true,
+      cellStyle: params => {
+        if (!params.data || params.data.__rowIndex === undefined) return null;
+        const key = `${params.data.__rowIndex}:${params.colDef.field}`;
+        if (originalValues.has(key) && originalValues.get(key) !== params.value) {
+          return { background: 'rgba(200, 180, 50, 0.12)', borderLeft: '2px solid rgba(200, 180, 50, 0.6)' };
+        }
+        return null;
+      },
+      tooltipValueGetter: params => {
+        if (!params.data || params.data.__rowIndex === undefined) return null;
+        const key = `${params.data.__rowIndex}:${params.colDef.field}`;
+        if (originalValues.has(key) && originalValues.get(key) !== params.value) {
+          return `Original: ${originalValues.get(key) ?? '(vazio)'}`;
+        }
+        return null;
+      }
+    },
     onCellValueChanged: onCellChanged,
     onCellFocused: onCellFocused,
     onGridReady: p => { gridApi = p.api; },
@@ -422,6 +447,10 @@ function renderGrid(colDefs, rowData) {
 function onCellChanged(params) {
   const idx = params.data.__rowIndex;
   if (idx === undefined) return;
+  const key = `${idx}:${params.colDef.field}`;
+  if (!originalValues.has(key)) {
+    originalValues.set(key, params.oldValue);
+  }
   if (!isUndoRedo) {
     undoStack.push({ rowIndex: params.node.rowIndex, colField: params.colDef.field, oldValue: params.oldValue, newValue: params.newValue, dataIndex: idx });
     redoStack = [];
@@ -465,6 +494,7 @@ function saveFile() {
     a.click();
     URL.revokeObjectURL(a.href);
     pendingChanges.clear();
+    originalValues.clear();
     updateChangesPill();
     toast('Arquivo salvo com sucesso!', 'success');
     loadTables();
