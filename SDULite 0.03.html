@@ -158,6 +158,7 @@
       <button class="btn btn-ghost" id="btn-replicate" disabled>⧉ Replicar Linhas</button>
       <button class="btn btn-danger" id="btn-delete-rows" disabled>✕ Deletar Seleção</button>
       <div class="toolbar-sep"></div>
+      <button class="btn btn-ghost" id="btn-readonly" disabled>🔒 Somente Leitura</button>
       <label for="file-input" class="btn btn-primary">📂 Abrir arquivo</label>
       <button class="btn btn-success" id="btn-save" disabled>💾 Salvar</button>
       <button class="btn btn-danger" id="btn-restore" disabled>↩ Restaurar Original</button>
@@ -252,6 +253,7 @@ let columnDefs = [];
 let fileName = '';
 let undoStack = [], redoStack = [], isUndoRedo = false;
 let originalDbBytes = null; // backup do arquivo original
+let readOnlyMode = false;
 
 // ── INIT SQL.JS ───────────────────────────────────────────────────────────────
 initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${f}` })
@@ -282,11 +284,40 @@ document.getElementById('btn-replicate').addEventListener('click', replicateRows
 document.getElementById('btn-delete-rows').addEventListener('click', deleteSelectedRows);
 document.getElementById('btn-find-replace').addEventListener('click', openFindReplace);
 document.getElementById('btn-restore').addEventListener('click', restoreOriginal);
+document.getElementById('btn-readonly').addEventListener('click', toggleReadOnly);
 document.getElementById('quick-filter').addEventListener('input', e => {
   if (gridApi) gridApi.setGridOption('quickFilterText', e.target.value);
 });
 document.getElementById('fr-cancel').addEventListener('click', () => document.getElementById('modal-fr').classList.add('hidden'));
 document.getElementById('fr-apply').addEventListener('click', applyFindReplace);
+
+// ── READ-ONLY TOGGLE ─────────────────────────────────────────────────────────
+function toggleReadOnly() {
+  readOnlyMode = !readOnlyMode;
+  const btn = document.getElementById('btn-readonly');
+  btn.textContent = readOnlyMode ? '🔓 Modo Edicao' : '🔒 Somente Leitura';
+  btn.classList.toggle('btn-primary', readOnlyMode);
+  btn.classList.toggle('btn-ghost', !readOnlyMode);
+
+  // Disable/enable action buttons
+  const actionBtns = ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore'];
+  actionBtns.forEach(id => {
+    const el = document.getElementById(id);
+    if (readOnlyMode) el.setAttribute('disabled', '');
+    else el.removeAttribute('disabled');
+  });
+
+  // Update grid editability
+  if (gridApi) {
+    const newColDefs = columnDefs.map(c => ({
+      ...c,
+      editable: c.editable === undefined ? undefined : (readOnlyMode ? false : true)
+    }));
+    gridApi.setGridOption('columnDefs', newColDefs);
+  }
+
+  toast(readOnlyMode ? 'Modo somente leitura ativado' : 'Modo edicao ativado', 'info');
+}
 
 // ── LOAD FILE ─────────────────────────────────────────────────────────────────
 function loadFile(file) {
@@ -360,7 +391,7 @@ function loadTable(tableName) {
   document.getElementById('footer-table').textContent = tableName;
   document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
   document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
-  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore'].forEach(id =>
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
 }
