@@ -147,6 +147,32 @@
 
     #file-input { display: none; }
 
+    .sql-console {
+      display: none; flex-direction: column; border-top: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0; max-height: 40vh;
+    }
+    .sql-console.visible { display: flex; }
+    .sql-console-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px; border-bottom: 1px solid var(--border);
+      font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--text-muted);
+    }
+    .sql-editor {
+      width: 100%; min-height: 60px; max-height: 120px; resize: vertical;
+      background: var(--bg); border: none; border-bottom: 1px solid var(--border);
+      color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      padding: 12px 16px; outline: none;
+    }
+    .sql-result {
+      flex: 1; overflow: auto; padding: 8px 16px; font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; color: var(--text-muted);
+    }
+    .sql-result table { border-collapse: collapse; width: 100%; }
+    .sql-result th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); color: var(--accent); font-size: 10px; text-transform: uppercase; }
+    .sql-result td { padding: 4px 8px; border-bottom: 1px solid rgba(51,51,51,0.5); }
+    .sql-result .sql-error { color: #cc6666; }
+
     .history-panel {
       width: 300px; flex-shrink: 0; border-left: 1px solid var(--border);
       background: var(--surface); display: none; flex-direction: column; overflow: hidden;
@@ -199,6 +225,7 @@
       <label for="file-input" class="btn btn-primary">📂 Abrir arquivo</label>
       <button class="btn btn-success" id="btn-save" disabled>💾 Salvar</button>
       <button class="btn btn-ghost" id="btn-history" disabled>📋 Historico</button>
+      <button class="btn btn-ghost" id="btn-sql" disabled>⌘ SQL</button>
       <button class="btn btn-danger" id="btn-restore" disabled>↩ Restaurar Original</button>
     </div>
   </header>
@@ -237,6 +264,18 @@
           </label>
         </div>
         <div id="grid" class="ag-theme-alpine-dark"></div>
+      </div>
+
+      <div class="sql-console" id="sql-console">
+        <div class="sql-console-header">
+          <span>Console SQL</span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" style="padding:4px 12px;font-size:11px;" id="sql-run">▶ Executar (Ctrl+Enter)</button>
+            <button class="btn btn-ghost" style="padding:4px 8px;font-size:11px;" id="sql-close">✕</button>
+          </div>
+        </div>
+        <textarea class="sql-editor" id="sql-editor" placeholder="SELECT * FROM tabela WHERE ..."></textarea>
+        <div class="sql-result" id="sql-result">Resultado aparecera aqui</div>
       </div>
     </div>
 
@@ -353,6 +392,12 @@ document.getElementById('btn-find-replace').addEventListener('click', openFindRe
 document.getElementById('btn-restore').addEventListener('click', restoreOriginal);
 document.getElementById('btn-readonly').addEventListener('click', toggleReadOnly);
 document.getElementById('btn-history').addEventListener('click', toggleHistory);
+document.getElementById('btn-sql').addEventListener('click', toggleSqlConsole);
+document.getElementById('sql-close').addEventListener('click', () => document.getElementById('sql-console').classList.remove('visible'));
+document.getElementById('sql-run').addEventListener('click', executeSql);
+document.getElementById('sql-editor').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); executeSql(); }
+});
 document.getElementById('btn-close-history').addEventListener('click', () => {
   document.getElementById('history-panel').classList.remove('visible');
 });
@@ -506,7 +551,7 @@ function loadTable(tableName) {
   document.getElementById('footer-table').textContent = tableName;
   document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
   document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
-  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history'].forEach(id =>
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
 }
@@ -829,6 +874,42 @@ function toast(msg, type = 'info') {
 // ── HISTORY PANEL ──────────────────────────────────────────────────────────
 function toggleHistory() {
   document.getElementById('history-panel').classList.toggle('visible');
+}
+
+// ── SQL CONSOLE ────────────────────────────────────────────────────────────
+function toggleSqlConsole() {
+  const consoleEl = document.getElementById('sql-console');
+  consoleEl.classList.toggle('visible');
+  if (consoleEl.classList.contains('visible')) {
+    document.getElementById('sql-editor').focus();
+  }
+}
+
+function executeSql() {
+  const query = document.getElementById('sql-editor').value.trim();
+  if (!query || !db) return;
+  const resultDiv = document.getElementById('sql-result');
+  try {
+    const results = db.exec(query);
+    if (!results.length) {
+      resultDiv.innerHTML = '<span style="color:#66aa66;">Query executada com sucesso (0 resultados)</span>';
+      if (/^\s*(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE)/i.test(query)) {
+        loadTables();
+        if (currentTable) loadTable(currentTable);
+      }
+      return;
+    }
+    const r = results[0];
+    let html = `<div style="margin-bottom:8px;color:var(--accent);">${r.values.length} resultado(s)</div>`;
+    html += '<table><thead><tr>' + r.columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+    r.values.forEach(row => {
+      html += '<tr>' + row.map(v => `<td>${v ?? '<em style="opacity:.4">NULL</em>'}</td>`).join('') + '</tr>';
+    });
+    html += '</tbody></table>';
+    resultDiv.innerHTML = html;
+  } catch(e) {
+    resultDiv.innerHTML = `<span class="sql-error">Erro: ${e.message}</span>`;
+  }
 }
 
 function addToHistory(table, col, rowIndex, oldValue, newValue) {
