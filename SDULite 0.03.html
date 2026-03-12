@@ -120,7 +120,7 @@
     .grid-wrapper { flex: 1; overflow: hidden; position: relative; }
     #grid { height: 100%; width: 100%; display: none; }
 
-    .upload-zone { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; cursor: pointer; transition: background 0.2s; }
+    .upload-zone { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; transition: background 0.2s; }
     .upload-zone.hidden { display: none; }
     .upload-zone:hover { background: rgba(117,51,153,0.02); }
     .upload-zone.drag-over { background: rgba(117,51,153,0.04); border: 2px dashed var(--brand-primary); }
@@ -265,7 +265,8 @@
     </div>
     <div class="header-right">
       <span class="status-badge" id="status-badge">Nenhum arquivo</span>
-      <label for="file-input" class="btn btn-primary">Abrir arquivo</label>
+      <button class="btn btn-primary" id="btn-open" onclick="document.getElementById('file-input').click()">Abrir arquivo</button>
+      <input type="file" id="file-input" accept=".sqlite,.db,.sqlite3" style="display:none;" />
       <button class="btn btn-success" id="btn-save" disabled>Salvar</button>
       <button class="btn btn-outline-danger" id="btn-restore" disabled>Restaurar Original</button>
     </div>
@@ -327,11 +328,11 @@
 
       <div class="grid-wrapper">
         <div id="upload-zone" class="upload-zone">
-          <label for="file-input" style="display:flex;flex-direction:column;align-items:center;gap:20px;cursor:pointer;width:100%;height:100%;justify-content:center;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:20px;width:100%;height:100%;justify-content:center;">
             <div class="upload-icon">◈</div>
             <div class="upload-title">Arraste um arquivo .sqlite ou .db aqui</div>
             <div class="upload-sub">ou clique em "Abrir arquivo" acima</div>
-          </label>
+          </div>
         </div>
         <div id="grid" class="ag-theme-alpine"></div>
       </div>
@@ -498,8 +499,6 @@
     </div>
   </div>
 </div>
-
-<input type="file" id="file-input" accept=".sqlite,.db,.sqlite3" />
 
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────────
