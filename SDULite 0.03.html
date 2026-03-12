@@ -231,6 +231,8 @@
       <button class="btn btn-ghost" id="btn-sql" disabled>⌘ SQL</button>
       <button class="btn btn-danger" id="btn-restore" disabled>↩ Restaurar Original</button>
       <button class="btn btn-ghost" id="btn-export" disabled>📤 Exportar CSV</button>
+      <label for="csv-input" class="btn btn-ghost" id="btn-import-label" style="pointer-events:none;opacity:0.35;">📥 Importar CSV</label>
+      <input type="file" id="csv-input" accept=".csv,.tsv,.txt" style="display:none;" />
     </div>
   </header>
 
@@ -429,6 +431,11 @@ document.getElementById('btn-global-search').addEventListener('click', openGloba
 document.getElementById('btn-bookmark').addEventListener('click', bookmarkSelected);
 document.getElementById('btn-bookmarks').addEventListener('click', showBookmarks);
 document.getElementById('btn-export').addEventListener('click', exportCsv);
+document.getElementById('csv-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) importCsv(file);
+  e.target.value = '';
+});
 document.getElementById('global-search-close').addEventListener('click', () => document.getElementById('modal-search').classList.add('hidden'));
 document.getElementById('global-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') runGlobalSearch();
@@ -581,6 +588,9 @@ function loadTable(tableName) {
   ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search','btn-bookmark','btn-bookmarks','btn-export'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
+  const importLabel = document.getElementById('btn-import-label');
+  importLabel.style.pointerEvents = '';
+  importLabel.style.opacity = '';
 }
 
 // ── RENDER GRID ───────────────────────────────────────────────────────────────
@@ -1548,6 +1558,56 @@ function exportCsv() {
   a.click();
   URL.revokeObjectURL(a.href);
   toast(`Exportado: ${currentTable}.csv`, 'success');
+}
+
+// ── IMPORT CSV ─────────────────────────────────────────────────────────────
+function importCsv(file) {
+  if (!db || !currentTable) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const text = e.target.result;
+      const sep = text.includes('\t') ? '\t' : ';';
+      const lines = text.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
+      if (lines.length < 2) { toast('Arquivo vazio ou sem dados', 'error'); return; }
+
+      const headers = lines[0].split(sep).map(h => h.replace(/^"|"$/g, '').replace(/^\uFEFF/, '').trim());
+      const tableCols = columnDefs.slice(1).map(c => c.field);
+
+      const mapping = headers.map(h => tableCols.find(c => c.toLowerCase() === h.toLowerCase()));
+      const validMapping = mapping.filter(m => m !== undefined);
+      if (!validMapping.length) { toast('Nenhuma coluna correspondente encontrada', 'error'); return; }
+
+      const colInfo = db.exec(`PRAGMA table_info("${currentTable}")`)[0]?.values ?? [];
+      let imported = 0;
+      db.run('BEGIN TRANSACTION');
+      try {
+        for (let i = 1; i < lines.length; i++) {
+          const vals = lines[i].split(sep).map(v => v.replace(/^"|"$/g, ''));
+          const insertCols = [], insertVals = [];
+          headers.forEach((h, j) => {
+            if (mapping[j] && vals[j] !== undefined) {
+              const info = colInfo.find(r => r[1] === mapping[j]);
+              const isPk = info?.[5] > 0;
+              if (!isPk) {
+                insertCols.push(`"${mapping[j]}"`);
+                insertVals.push(vals[j] === '' ? null : vals[j]);
+              }
+            }
+          });
+          if (insertCols.length) {
+            db.run(`INSERT INTO "${currentTable}" (${insertCols.join(',')}) VALUES (${insertCols.map(()=>'?').join(',')})`, insertVals);
+            imported++;
+          }
+        }
+        db.run('COMMIT');
+      } catch(e) { db.run('ROLLBACK'); throw e; }
+
+      loadTable(currentTable);
+      toast(`${imported} linha(s) importada(s) do CSV`, 'success');
+    } catch(e) { toast('Erro ao importar: ' + e.message, 'error'); }
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 </script>
 </body>
