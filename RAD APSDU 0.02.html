@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RAD APSDU</title>
+  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #111111;
+      --surface: #1a1a1a;
+      --surface2: #222222;
+      --border: #333333;
+      --accent: #d0d0d0;
+      --text: #e8e8e8;
+      --text-muted: #666666;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; overflow: hidden; }
+    .app { display: flex; flex-direction: column; height: 100vh; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px; border-bottom: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0; gap: 16px;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .logo-icon { width: 28px; height: 28px; background: linear-gradient(135deg, #cccccc, #666666); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+    .logo span { color: #cccccc; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+
+    .btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 16px; border-radius: 7px; border: none; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.18s; letter-spacing: 0.02em; text-decoration: none; }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: #444; }
+    .btn-primary { background: linear-gradient(135deg, #cccccc, #999999); color: #111; }
+    .btn-primary:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn-success { background: linear-gradient(135deg, #aaaaaa, #777777); color: #111; }
+    .btn-success:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn-danger { background: transparent; color: #aaaaaa; border: 1px solid #555; }
+    .btn-danger:hover { background: rgba(180,180,180,0.08); }
+    .btn:disabled, button:disabled { opacity: 0.35; cursor: not-allowed; transform: none !important; pointer-events: none; }
+
+    .status-badge { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); color: var(--text-muted); background: var(--surface2); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status-badge.loaded { color: #bbbbbb; border-color: #666; background: rgba(180,180,180,0.07); }
+
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    .sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; overflow: hidden; }
+    .sidebar-header { padding: 14px 16px 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+    .table-list { flex: 1; overflow-y: auto; padding: 8px; }
+    .table-list::-webkit-scrollbar { width: 4px; }
+    .table-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .table-item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; color: var(--text-muted); transition: all 0.15s; font-family: 'JetBrains Mono', monospace; border: 1px solid transparent; }
+    .table-item:hover { background: var(--surface2); color: var(--text); }
+    .table-item.active { background: rgba(200,200,200,0.07); color: var(--accent); border-color: rgba(200,200,200,0.18); }
+    .row-count { margin-left: auto; font-size: 10px; background: var(--surface2); padding: 2px 6px; border-radius: 10px; color: var(--text-muted); flex-shrink: 0; }
+    .table-item.active .row-count { background: rgba(200,200,200,0.1); color: var(--accent); }
+
+    .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; flex-wrap: wrap; }
+    .toolbar-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+    .search-box { display: flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 5px 10px; transition: border-color 0.15s; }
+    .search-box:focus-within { border-color: var(--accent); }
+    .search-box input { background: none; border: none; outline: none; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 180px; }
+    .search-box input::placeholder { color: var(--text-muted); }
+    .changes-pill { display: none; align-items: center; gap: 5px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #cccccc; background: rgba(180,180,180,0.07); border: 1px solid rgba(180,180,180,0.25); border-radius: 20px; padding: 3px 10px; }
+    .changes-pill.visible { display: flex; }
+
+    .grid-wrapper { flex: 1; overflow: hidden; position: relative; }
+    #grid { height: 100%; width: 100%; display: none; }
+
+    .upload-zone { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; cursor: pointer; transition: background 0.2s; }
+    .upload-zone.hidden { display: none; }
+    .upload-zone:hover { background: rgba(200,200,200,0.02); }
+    .upload-zone.drag-over { background: rgba(200,200,200,0.04); border: 2px dashed #555; }
+    .upload-icon { width: 72px; height: 72px; border: 2px dashed var(--border); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 28px; color: var(--text-muted); transition: all 0.2s; }
+    .upload-zone:hover .upload-icon, .upload-zone.drag-over .upload-icon { border-color: var(--accent); color: var(--accent); }
+    .upload-title { font-size: 18px; font-weight: 800; }
+    .upload-sub { font-size: 13px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+
+    footer { display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; height: 32px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); }
+    .footer-info { display: flex; gap: 20px; }
+
+    .toast-container { position: fixed; bottom: 48px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
+    .toast { padding: 10px 16px; border-radius: 8px; font-size: 13px; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 8px; animation: slideIn 0.2s ease; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    .toast.success { background: #aaaaaa; color: #111; }
+    .toast.error { background: #555555; color: #fff; }
+    .toast.info { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50; backdrop-filter: blur(4px); }
+    .modal-overlay.hidden { display: none; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 460px; box-shadow: 0 24px 48px rgba(0,0,0,0.5); }
+    .modal h3 { font-size: 16px; font-weight: 800; margin-bottom: 20px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+    .form-group input, .form-group select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 8px 12px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13px; outline: none; transition: border-color 0.15s; }
+    .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+    .form-group select option { background: var(--surface); }
+    .modal-section { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+    .modal-section-title { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
+    .modal-section-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; font-family: 'JetBrains Mono', monospace; }
+    .modal-row { display: flex; gap: 8px; align-items: center; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+    .inline-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; outline: none; }
+    .inline-input:focus { border-color: var(--accent); }
+    .inline-select { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; outline: none; }
+    .inline-select option { background: var(--surface); }
+
+    /* AG Grid */
+    .ag-theme-alpine-dark {
+      --ag-background-color: var(--bg);
+      --ag-odd-row-background-color: rgba(255,255,255,0.015);
+      --ag-header-background-color: var(--surface);
+      --ag-border-color: var(--border);
+      --ag-row-border-color: var(--border);
+      --ag-selected-row-background-color: rgba(200,200,200,0.07);
+      --ag-range-selection-border-color: #aaaaaa;
+      --ag-range-selection-background-color: rgba(200,200,200,0.06);
+      --ag-font-family: 'JetBrains Mono', monospace;
+      --ag-font-size: 12px;
+      --ag-foreground-color: var(--text);
+      --ag-secondary-foreground-color: var(--text-muted);
+      --ag-header-foreground-color: var(--text-muted);
+      --ag-row-hover-color: rgba(255,255,255,0.03);
+      --ag-cell-horizontal-padding: 12px;
+      --ag-row-height: 34px;
+      --ag-header-height: 38px;
+    }
+    .ag-theme-alpine-dark .ag-header-cell-text { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+    .ag-theme-alpine-dark .ag-cell.ag-cell-focus { border: 1px solid #aaaaaa !important; }
+
+    /* Fill Handle */
+    .fill-handle-dot { position: fixed; width: 8px; height: 8px; background: #cccccc; border: 2px solid #111; border-radius: 1px; cursor: crosshair; z-index: 200; pointer-events: all; box-shadow: 0 0 6px rgba(200,200,200,0.4); }
+    .fill-preview-overlay { position: fixed; background: rgba(200,200,200,0.06); border: 1px dashed #888; pointer-events: none; z-index: 199; }
+
+    /* Selection overlay */
+    .sel-overlay { position: fixed; border: 2px solid #aaaaaa; pointer-events: none; z-index: 198; border-radius: 2px; }
+    .sel-overlay.copying { border-style: dashed; }
+
+    #file-input { display: none; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">◈</div>
+      <span>RAD</span>&nbsp;APSDU
+    </div>
+    <div class="header-actions">
+      <span class="status-badge" id="status-badge">Nenhum arquivo</span>
+      <button class="btn btn-ghost" id="btn-find-replace" disabled>🔍 Find &amp; Replace</button>
+      <button class="btn btn-ghost" id="btn-add-row" disabled>＋ Nova Linha</button>
+      <button class="btn btn-ghost" id="btn-replicate" disabled>⧉ Replicar Linhas</button>
+      <button class="btn btn-danger" id="btn-delete-rows" disabled>✕ Deletar Seleção</button>
+      <div class="toolbar-sep"></div>
+      <label for="file-input" class="btn btn-primary">📂 Abrir arquivo</label>
+      <button class="btn btn-success" id="btn-save" disabled>💾 Salvar</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="sidebar">
+      <div class="sidebar-header">Tabelas</div>
+      <div class="table-list" id="table-list">
+        <div style="padding:20px 10px;font-size:12px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;text-align:center;line-height:1.8;">
+          Abra um arquivo<br>.sqlite ou .db<br>para começar
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="toolbar">
+        <div class="search-box">
+          <span style="color:var(--text-muted);font-size:12px;">⌕</span>
+          <input type="text" id="quick-filter" placeholder="Filtrar linhas..." />
+        </div>
+        <div class="toolbar-sep"></div>
+        <span class="changes-pill" id="changes-pill">
+          ● <span id="changes-count">0</span> alterações pendentes
+        </span>
+      </div>
+
+      <div class="grid-wrapper">
+        <div id="upload-zone" class="upload-zone">
+          <label for="file-input" style="display:flex;flex-direction:column;align-items:center;gap:20px;cursor:pointer;width:100%;height:100%;justify-content:center;">
+            <div class="upload-icon">◈</div>
+            <div class="upload-title">Arraste um arquivo .sqlite ou .db aqui</div>
+            <div class="upload-sub">ou clique em "Abrir arquivo" acima</div>
+          </label>
+        </div>
+        <div id="grid" class="ag-theme-alpine-dark"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-info">
+      <span id="footer-table">—</span>
+      <span id="footer-rows">0 linhas</span>
+      <span id="footer-cols">0 colunas</span>
+    </div>
+    <span id="footer-file">Nenhum arquivo aberto</span>
+  </footer>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Find & Replace Modal -->
+<div class="modal-overlay hidden" id="modal-fr">
+  <div class="modal">
+    <h3>🔍 Find &amp; Replace</h3>
+    <div class="modal-section">
+      <div class="modal-section-title">Condição (filtro)</div>
+      <div class="modal-row">
+        <select id="fr-filter-col" class="inline-select"></select>
+        <span style="color:var(--text-muted);font-size:12px;font-family:'JetBrains Mono',monospace;flex-shrink:0;">=</span>
+        <input type="text" id="fr-filter-val" class="inline-input" placeholder="valor do filtro (opcional)" />
+      </div>
+      <div class="modal-section-hint">Deixe em branco para aplicar em todas as linhas</div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">Substituição</div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>Coluna a substituir</label>
+        <select id="fr-column"></select>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Novo valor</label>
+        <input type="text" id="fr-replace" placeholder="novo valor" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="fr-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="fr-apply">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept=".sqlite,.db,.sqlite3" />
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let SQL = null, db = null, gridApi = null, currentTable = null;
+let pendingChanges = new Map();
+let columnDefs = [];
+let fileName = '';
+let undoStack = [], redoStack = [], isUndoRedo = false;
+
+// ── INIT SQL.JS ───────────────────────────────────────────────────────────────
+initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${f}` })
+  .then(sql => { SQL = sql; toast('sql.js carregado ✓', 'info'); })
+  .catch(e => toast('Erro ao carregar sql.js: ' + e.message, 'error'));
+
+// ── FILE INPUT ────────────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) loadFile(file);
+  e.target.value = ''; // reset so same file can be reopened
+});
+
+// ── UPLOAD ZONE DRAG & DROP ───────────────────────────────────────────────────
+const uploadZone = document.getElementById('upload-zone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+// ── TOOLBAR BUTTONS ───────────────────────────────────────────────────────────
+document.getElementById('btn-save').addEventListener('click', saveFile);
+document.getElementById('btn-add-row').addEventListener('click', addRow);
+document.getElementById('btn-replicate').addEventListener('click', replicateRows);
+document.getElementById('btn-delete-rows').addEventListener('click', deleteSelectedRows);
+document.getElementById('btn-find-replace').addEventListener('click', openFindReplace);
+document.getElementById('quick-filter').addEventListener('input', e => {
+  if (gridApi) gridApi.setGridOption('quickFilterText', e.target.value);
+});
+document.getElementById('fr-cancel').addEventListener('click', () => document.getElementById('modal-fr').classList.add('hidden'));
+document.getElementById('fr-apply').addEventListener('click', applyFindReplace);
+
+// ── LOAD FILE ─────────────────────────────────────────────────────────────────
+function loadFile(file) {
+  if (!SQL) { toast('sql.js ainda carregando...', 'error'); return; }
+  fileName = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      db = new SQL.Database(new Uint8Array(e.target.result));
+      document.getElementById('footer-file').textContent = file.name;
+      document.getElementById('status-badge').textContent = file.name;
+      document.getElementById('status-badge').classList.add('loaded');
+      loadTables();
+      toast('Arquivo carregado: ' + file.name, 'success');
+    } catch(err) { toast('Erro ao ler arquivo: ' + err.message, 'error'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── LOAD TABLES ───────────────────────────────────────────────────────────────
+function loadTables() {
+  const result = db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+  const tables = result.length ? result[0].values.map(r => r[0]) : [];
+  const list = document.getElementById('table-list');
+  list.innerHTML = '';
+  if (!tables.length) {
+    list.innerHTML = '<div style="padding:16px;font-size:12px;color:var(--text-muted);text-align:center;">Nenhuma tabela encontrada</div>';
+    return;
+  }
+  tables.forEach((t, i) => {
+    const cnt = db.exec(`SELECT COUNT(*) FROM "${t}"`)[0]?.values[0][0] ?? 0;
+    const item = document.createElement('div');
+    item.className = 'table-item';
+    item.dataset.name = t;
+    item.innerHTML = `<span style="opacity:.6;font-size:11px;">▤</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${t}</span><span class="row-count">${cnt}</span>`;
+    item.addEventListener('click', () => loadTable(t));
+    list.appendChild(item);
+    if (i === 0) loadTable(t);
+  });
+}
+
+// ── LOAD TABLE ────────────────────────────────────────────────────────────────
+function loadTable(tableName) {
+  currentTable = tableName;
+  pendingChanges.clear();
+  undoStack = []; redoStack = [];
+  updateChangesPill();
+
+  document.querySelectorAll('.table-item').forEach(el =>
+    el.classList.toggle('active', el.dataset.name === tableName)
+  );
+
+  const result = db.exec(`SELECT * FROM "${tableName}" LIMIT 5000`);
+  const cols = result.length ? result[0].columns : [];
+  const rows = result.length ? result[0].values : [];
+
+  columnDefs = [
+    { headerCheckboxSelection: true, checkboxSelection: true, width: 48, pinned: 'left',
+      resizable: false, sortable: false, filter: false, editable: false, suppressHeaderMenuButton: true },
+    ...cols.map(col => ({ field: col, headerName: col, editable: true, resizable: true, sortable: true, filter: true, minWidth: 100, flex: 1 }))
+  ];
+
+  const rowData = rows.map((row, i) => {
+    const obj = { __rowIndex: i };
+    cols.forEach((col, j) => { obj[col] = row[j]; });
+    return obj;
+  });
+
+  renderGrid(columnDefs, rowData);
+  document.getElementById('footer-table').textContent = tableName;
+  document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
+  document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace'].forEach(id =>
+    document.getElementById(id).removeAttribute('disabled')
+  );
+}
+
+// ── RENDER GRID ───────────────────────────────────────────────────────────────
+function renderGrid(colDefs, rowData) {
+  // hide upload zone, show grid
+  uploadZone.classList.add('hidden');
+  const gridEl = document.getElementById('grid');
+  gridEl.style.display = 'block';
+
+  if (gridApi) { gridApi.destroy(); gridApi = null; }
+
+  agGrid.createGrid(gridEl, {
+    columnDefs: colDefs,
+    rowData: rowData,
+    rowSelection: 'multiple',
+    suppressRowClickSelection: true,
+    defaultColDef: { resizable: true, sortable: true, filter: true },
+    onCellValueChanged: onCellChanged,
+    onCellFocused: onCellFocused,
+    onGridReady: p => { gridApi = p.api; },
+    animateRows: true,
+  });
+}
+
+// ── CELL CHANGED ──────────────────────────────────────────────────────────────
+function onCellChanged(params) {
+  const idx = params.data.__rowIndex;
+  if (idx === undefined) return;
+  if (!isUndoRedo) {
+    undoStack.push({ rowIndex: params.node.rowIndex, colField: params.colDef.field, oldValue: params.oldValue, newValue: params.newValue, dataIndex: idx });
+    redoStack = [];
+  }
+  if (!pendingChanges.has(idx)) pendingChanges.set(idx, {});
+  pendingChanges.get(idx)[params.colDef.field] = params.newValue;
+  updateChangesPill();
+}
+
+// ── CHANGES PILL ──────────────────────────────────────────────────────────────
+function updateChangesPill() {
+  const pill = document.getElementById('changes-pill');
+  const count = pendingChanges.size;
+  pill.classList.toggle('visible', count > 0);
+  document.getElementById('changes-count').textContent = count;
+}
+
+// ── SAVE FILE ─────────────────────────────────────────────────────────────────
+function saveFile() {
+  if (!db || !currentTable || !gridApi) return;
+  try {
+    const pkCol = db.exec(`PRAGMA table_info("${currentTable}")`)[0]?.values.find(r => r[5] > 0)?.[1];
+    const allRows = [];
+    gridApi.forEachNode(n => allRows.push(n.data));
+    db.run('BEGIN TRANSACTION');
+    try {
+      allRows.forEach(row => {
+        if (row.__rowIndex === undefined) return;
+        const cols = Object.keys(row).filter(k => k !== '__rowIndex');
+        const setClause = cols.map(c => `"${c}" = ?`).join(', ');
+        if (pkCol && row[pkCol] !== undefined) {
+          db.run(`UPDATE "${currentTable}" SET ${setClause} WHERE "${pkCol}" = ?`, [...cols.map(c => row[c]), row[pkCol]]);
+        } else {
+          db.run(`UPDATE "${currentTable}" SET ${setClause} WHERE rowid = ?`, [...cols.map(c => row[c]), row.__rowIndex + 1]);
+        }
+      });
+      db.run('COMMIT');
+    } catch(e) { db.run('ROLLBACK'); throw e; }
+    const blob = new Blob([db.export()], { type: 'application/octet-stream' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: fileName || 'database.sqlite' });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    pendingChanges.clear();
+    updateChangesPill();
+    toast('Arquivo salvo com sucesso!', 'success');
+    loadTables();
+  } catch(e) { toast('Erro ao salvar: ' + e.message, 'error'); }
+}
+
+// ── ADD ROW ───────────────────────────────────────────────────────────────────
+function addRow() {
+  if (!db || !currentTable) return;
+  try {
+    const cols = columnDefs.slice(1).map(c => c.field);
+
+    // Get column info to respect NOT NULL and defaults
+    const colInfo = db.exec(`PRAGMA table_info("${currentTable}")`)[0]?.values ?? [];
+    // colInfo columns: [cid, name, type, notnull, dflt_value, pk]
+
+    const insertCols = [], insertVals = [];
+    cols.forEach(col => {
+      const info = colInfo.find(r => r[1] === col);
+      const notNull  = info?.[3] === 1;
+      const hasDflt  = info?.[4] !== null;
+      const isPk     = info?.[5] > 0;
+      // Skip PK columns (likely AUTOINCREMENT) and columns with defaults
+      if (isPk || hasDflt) return;
+      insertCols.push(`"${col}"`);
+      // Use empty string for NOT NULL text columns, 0 for numeric
+      const type = (info?.[2] ?? '').toUpperCase();
+      if (notNull) {
+        insertVals.push(type.includes('INT') || type.includes('REAL') || type.includes('NUM') ? 0 : '');
+      } else {
+        insertVals.push(null);
+      }
+    });
+
+    if (insertCols.length === 0) {
+      // All columns have defaults or are PK — insert empty row
+      db.run(`INSERT INTO "${currentTable}" DEFAULT VALUES`);
+    } else {
+      db.run(
+        `INSERT INTO "${currentTable}" (${insertCols.join(',')}) VALUES (${insertCols.map(()=>'?').join(',')})`,
+        insertVals
+      );
+    }
+
+    loadTable(currentTable);
+    toast('Linha adicionada', 'success');
+  } catch(e) { toast('Erro ao adicionar linha: ' + e.message, 'error'); }
+}
+
+// ── DELETE ROWS ───────────────────────────────────────────────────────────────
+function deleteSelectedRows() {
+  if (!gridApi || !currentTable) return;
+  const selected = gridApi.getSelectedRows();
+  if (!selected.length) { toast('Selecione linhas para deletar', 'info'); return; }
+  try {
+    const pkCol = db.exec(`PRAGMA table_info("${currentTable}")`)[0]?.values.find(r=>r[5]>0)?.[1];
+    db.run('BEGIN TRANSACTION');
+    try {
+      selected.forEach(row => {
+        if (pkCol && row[pkCol] !== undefined) db.run(`DELETE FROM "${currentTable}" WHERE "${pkCol}" = ?`, [row[pkCol]]);
+        else if (row.__rowIndex !== undefined) db.run(`DELETE FROM "${currentTable}" WHERE rowid = ?`, [row.__rowIndex + 1]);
+      });
+      db.run('COMMIT');
+    } catch(e) { db.run('ROLLBACK'); throw e; }
+    loadTable(currentTable);
+    toast(`${selected.length} linha(s) deletada(s)`, 'success');
+  } catch(e) { toast('Erro: ' + e.message, 'error'); }
+}
+
+// ── REPLICATE ROWS ────────────────────────────────────────────────────────────
+function replicateRows() {
+  if (!gridApi || !currentTable) return;
+  const selected = gridApi.getSelectedRows();
+  if (!selected.length) { toast('Selecione linhas para replicar', 'info'); return; }
+
+  try {
+    const cols = columnDefs.slice(1).map(c => c.field);
+    const hasRecno = cols.includes('R_E_C_N_O_');
+
+    // Get current max R_E_C_N_O_
+    let maxRecno = 0;
+    if (hasRecno) {
+      const res = db.exec(`SELECT MAX("R_E_C_N_O_") FROM "${currentTable}"`);
+      maxRecno = res[0]?.values[0][0] ?? 0;
+    }
+
+    const colInfo = db.exec(`PRAGMA table_info("${currentTable}")`)[0]?.values ?? [];
+
+    db.run('BEGIN TRANSACTION');
+    try {
+      selected.forEach(row => {
+        maxRecno++;
+        const insertCols = [], insertVals = [];
+        cols.forEach(col => {
+          const info    = colInfo.find(r => r[1] === col);
+          const isPk    = info?.[5] > 0;
+          if (isPk) return; // skip autoincrement PK
+          insertCols.push(`"${col}"`);
+          if (col === 'R_E_C_N_O_') {
+            insertVals.push(maxRecno);
+          } else {
+            insertVals.push(row[col] ?? null);
+          }
+        });
+        db.run(
+          `INSERT INTO "${currentTable}" (${insertCols.join(',')}) VALUES (${insertCols.map(()=>'?').join(',')})`,
+          insertVals
+        );
+      });
+      db.run('COMMIT');
+    } catch(e) { db.run('ROLLBACK'); throw e; }
+
+    loadTable(currentTable);
+    toast(`${selected.length} linha(s) replicada(s) ✓`, 'success');
+  } catch(e) { toast('Erro ao replicar: ' + e.message, 'error'); }
+}
+
+// ── FIND & REPLACE ────────────────────────────────────────────────────────────
+function openFindReplace() {
+  if (!currentTable) return;
+  const cols = columnDefs.slice(1).map(c => c.field);
+  const opts = cols.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('fr-filter-col').innerHTML = opts;
+  document.getElementById('fr-column').innerHTML = opts;
+  document.getElementById('fr-filter-val').value = '';
+  document.getElementById('fr-replace').value = '';
+  document.getElementById('modal-fr').classList.remove('hidden');
+  document.getElementById('fr-filter-val').focus();
+}
+
+function applyFindReplace() {
+  const filterCol  = document.getElementById('fr-filter-col').value;
+  const filterVal  = document.getElementById('fr-filter-val').value.trim();
+  const replaceCol = document.getElementById('fr-column').value;
+  const replaceVal = document.getElementById('fr-replace').value;
+  const hasFilter  = filterVal !== '';
+
+  const toUpdate = [], batch = [];
+  gridApi.forEachNode(node => {
+    if (hasFilter && String(node.data[filterCol] ?? '').trim() !== filterVal) return;
+    const oldValue = node.data[replaceCol];
+    batch.push({ rowIndex: node.rowIndex, colField: replaceCol, oldValue, newValue: replaceVal, dataIndex: node.data.__rowIndex });
+    toUpdate.push(node.data);
+  });
+
+  if (batch.length) {
+    // Apply values
+    toUpdate.forEach(data => { data[replaceCol] = replaceVal; });
+    batch.forEach(b => {
+      if (b.dataIndex !== undefined) {
+        if (!pendingChanges.has(b.dataIndex)) pendingChanges.set(b.dataIndex, {});
+        pendingChanges.get(b.dataIndex)[replaceCol] = replaceVal;
+      }
+    });
+    undoStack.push({ batch }); redoStack = [];
+    // Force full grid redraw
+    const allRows = [];
+    gridApi.forEachNode(n => allRows.push(n.data));
+    gridApi.setGridOption('rowData', allRows);
+  }
+  updateChangesPill();
+  document.getElementById('modal-fr').classList.add('hidden');
+  toast(`${batch.length} substituição(ões) feita(s)`, batch.length > 0 ? 'success' : 'info');
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const el = Object.assign(document.createElement('div'), { className: `toast ${type}`, textContent: msg });
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => { el.style.cssText = 'opacity:0;transition:opacity .3s'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+// ── UNDO / REDO ───────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (!gridApi) return;
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undoLast(); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redoLast(); }
+  if (e.key === 'Escape') { selStart = null; selEnd = null; copyBuffer = null; removeSelOverlay(); }
+});
+
+function undoLast() {
+  if (!undoStack.length) { toast('Nada para desfazer', 'info'); return; }
+  const entry = undoStack.pop(); redoStack.push(entry);
+  const changes = entry.batch || [entry];
+  applyUndoRedoChanges(changes, 'old');
+  toast(`Desfeito ✓ (${changes.length} célula${changes.length > 1 ? 's' : ''})`, 'info');
+}
+
+function redoLast() {
+  if (!redoStack.length) { toast('Nada para refazer', 'info'); return; }
+  const entry = redoStack.pop(); undoStack.push(entry);
+  const changes = entry.batch || [entry];
+  applyUndoRedoChanges(changes, 'new');
+  toast(`Refeito ✓ (${changes.length} célula${changes.length > 1 ? 's' : ''})`, 'info');
+}
+
+function applyUndoRedoChanges(changes, direction) {
+  isUndoRedo = true;
+  const toUpdate = [];
+  gridApi.forEachNode(node => {
+    const change = changes.find(c => c.rowIndex === node.rowIndex);
+    if (!change) return;
+    const val = direction === 'old' ? change.oldValue : change.newValue;
+    node.data[change.colField] = val;
+    toUpdate.push(node.data);
+    if (change.dataIndex !== undefined) {
+      if (!pendingChanges.has(change.dataIndex)) pendingChanges.set(change.dataIndex, {});
+      pendingChanges.get(change.dataIndex)[change.colField] = val;
+    }
+  });
+  gridApi.applyTransaction({ update: toUpdate });
+  isUndoRedo = false;
+  updateChangesPill();
+}
+
+// ── FILL HANDLE ───────────────────────────────────────────────────────────────
+let focusedCell = null, fillDot = null, fillPreview = null, fillStartCell = null;
+
+function onCellFocused(params) {
+  if (params.rowIndex === null || params.rowIndex === undefined || !params.column) { removeFillDot(); return; }
+  const colId = params.column.getColId();
+  if (!params.column.getColDef().editable) { removeFillDot(); return; }
+  focusedCell = { rowIndex: params.rowIndex, colField: colId };
+  setTimeout(repositionFillDot, 30);
+}
+
+function getCellEl(rowIndex, colId) {
+  return document.querySelector(`.ag-row[row-index="${rowIndex}"] .ag-cell[col-id="${colId}"]`);
+}
+
+function repositionFillDot() {
+  if (!focusedCell || !gridApi) return;
+  const cellEl = getCellEl(focusedCell.rowIndex, focusedCell.colField);
+  if (!cellEl) { removeFillDot(); return; }
+  const rect = cellEl.getBoundingClientRect();
+  if (!fillDot) {
+    fillDot = document.createElement('div');
+    fillDot.className = 'fill-handle-dot';
+    fillDot.title = 'Arraste para preencher células abaixo';
+    document.body.appendChild(fillDot);
+    fillDot.addEventListener('mousedown', startFillDrag);
+  }
+  fillDot.style.left = (rect.right - 5) + 'px';
+  fillDot.style.top  = (rect.bottom - 5) + 'px';
+}
+
+function removeFillDot() {
+  if (fillDot) { fillDot.remove(); fillDot = null; }
+}
+
+function startFillDrag(e) {
+  e.preventDefault(); e.stopPropagation();
+  if (!focusedCell) return;
+  fillStartCell = { ...focusedCell };
+  let sourceValue = null;
+  gridApi.forEachNode(node => { if (node.rowIndex === fillStartCell.rowIndex) sourceValue = node.data[fillStartCell.colField]; });
+
+  const sourceCellEl = getCellEl(fillStartCell.rowIndex, fillStartCell.colField);
+  const colRect = sourceCellEl ? sourceCellEl.getBoundingClientRect() : { left:0, right:0, width:0 };
+
+  fillPreview = document.createElement('div');
+  fillPreview.className = 'fill-preview-overlay';
+  document.body.appendChild(fillPreview);
+
+  let lastTargetRow = fillStartCell.rowIndex;
+
+  function onMouseMove(ev) {
+    let rowEl = null;
+    for (const el of document.elementsFromPoint(ev.clientX, ev.clientY)) {
+      if (el.hasAttribute && el.hasAttribute('row-index')) { rowEl = el; break; }
+      const r = el.closest?.('[row-index]'); if (r) { rowEl = r; break; }
+    }
+    if (!rowEl) return;
+    const rowIndex = parseInt(rowEl.getAttribute('row-index'));
+    if (isNaN(rowIndex)) return;
+    lastTargetRow = rowIndex;
+
+    const startRowEl = document.querySelector(`.ag-row[row-index="${fillStartCell.rowIndex}"]`);
+    const endRowEl   = document.querySelector(`.ag-row[row-index="${rowIndex}"]`);
+    if (!startRowEl || !endRowEl) return;
+    const sR = startRowEl.getBoundingClientRect(), eR = endRowEl.getBoundingClientRect();
+    const top = Math.min(sR.top, eR.top), bottom = Math.max(sR.bottom, eR.bottom);
+    fillPreview.style.cssText = `left:${colRect.left}px;top:${top}px;width:${colRect.width}px;height:${bottom-top}px;`;
+    if (fillDot) { fillDot.style.left = (colRect.right - 5) + 'px'; fillDot.style.top = (bottom - 5) + 'px'; }
+  }
+
+  function onMouseUp() {
+    if (fillPreview) { fillPreview.remove(); fillPreview = null; }
+    const minRow = Math.min(fillStartCell.rowIndex, lastTargetRow);
+    const maxRow = Math.max(fillStartCell.rowIndex, lastTargetRow);
+    if (minRow !== maxRow) {
+      const toUpdate = [], fillUndoBatch = [];
+      gridApi.forEachNode(node => {
+        if (node.rowIndex >= minRow && node.rowIndex <= maxRow && node.rowIndex !== fillStartCell.rowIndex) {
+          const oldValue = node.data[fillStartCell.colField];
+          fillUndoBatch.push({ rowIndex: node.rowIndex, colField: fillStartCell.colField, oldValue, newValue: sourceValue, dataIndex: node.data.__rowIndex });
+          node.data[fillStartCell.colField] = sourceValue;
+          toUpdate.push(node.data);
+          if (node.data.__rowIndex !== undefined) {
+            if (!pendingChanges.has(node.data.__rowIndex)) pendingChanges.set(node.data.__rowIndex, {});
+            pendingChanges.get(node.data.__rowIndex)[fillStartCell.colField] = sourceValue;
+          }
+        }
+      });
+      if (fillUndoBatch.length) { undoStack.push({ batch: fillUndoBatch }); redoStack = []; }
+      gridApi.applyTransaction({ update: toUpdate });
+      updateChangesPill();
+      toast(`Fill: ${toUpdate.length} célula(s) preenchida(s)`, 'success');
+    }
+    setTimeout(repositionFillDot, 30);
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  }
+
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+}
+
+document.addEventListener('scroll', repositionFillDot, true);
+document.addEventListener('mousedown', e => {
+  if (fillDot && !fillDot.contains(e.target) && !document.getElementById('grid').contains(e.target)) removeFillDot();
+});
+
+// ── COPY / PASTE ──────────────────────────────────────────────────────────────
+let selStart = null, selEnd = null, copyBuffer = null;
+let selOverlayEl = null;
+
+function getDataCols() { return columnDefs.slice(1).map(c => c.field); }
+
+function getSelBounds() {
+  if (!selStart) return null;
+  return {
+    minRow: Math.min(selStart.rowIndex, selEnd?.rowIndex ?? selStart.rowIndex),
+    maxRow: Math.max(selStart.rowIndex, selEnd?.rowIndex ?? selStart.rowIndex),
+    minCol: Math.min(selStart.colIndex, selEnd?.colIndex ?? selStart.colIndex),
+    maxCol: Math.max(selStart.colIndex, selEnd?.colIndex ?? selStart.colIndex),
+  };
+}
+
+function removeSelOverlay() {
+  if (selOverlayEl) { selOverlayEl.remove(); selOverlayEl = null; }
+}
+
+function drawSelOverlay() {
+  removeSelOverlay();
+  const bounds = getSelBounds();
+  if (!bounds) return;
+  const cols = getDataCols();
+  const startCellEl = document.querySelector(`.ag-row[row-index="${bounds.minRow}"] .ag-cell[col-id="${cols[bounds.minCol]}"]`);
+  const endCellEl   = document.querySelector(`.ag-row[row-index="${bounds.maxRow}"] .ag-cell[col-id="${cols[bounds.maxCol]}"]`);
+  if (!startCellEl || !endCellEl) return;
+  const r1 = startCellEl.getBoundingClientRect(), r2 = endCellEl.getBoundingClientRect();
+  selOverlayEl = document.createElement('div');
+  selOverlayEl.className = 'sel-overlay' + (copyBuffer ? ' copying' : '');
+  selOverlayEl.style.cssText = `left:${r1.left}px;top:${r1.top}px;width:${r2.right-r1.left}px;height:${r2.bottom-r1.top}px;`;
+  document.body.appendChild(selOverlayEl);
+}
+
+// Mouse selection on grid cells
+let isDragSelecting = false;
+
+document.addEventListener('mousedown', e => {
+  if (!gridApi) return;
+  if (e.target.closest('.ag-selection-checkbox') || e.target.closest('.ag-checkbox')) return;
+
+  const cellEl = e.target.closest('.ag-cell');
+  const rowEl  = e.target.closest('.ag-row');
+  if (!cellEl || !rowEl) return;
+
+  const colId    = cellEl.getAttribute('col-id');
+  const rowIndex = parseInt(rowEl.getAttribute('row-index'));
+  if (isNaN(rowIndex) || !colId) return;
+
+  const cols     = getDataCols();
+  const colIndex = cols.indexOf(colId);
+  if (colIndex === -1) return;
+
+  if (e.shiftKey && selStart) {
+    selEnd = { rowIndex, colIndex };
+    drawSelOverlay();
+  } else {
+    selStart = { rowIndex, colIndex };
+    selEnd   = null;
+    copyBuffer = null;
+    isDragSelecting = true;
+    drawSelOverlay();
+  }
+});
+
+document.addEventListener('mouseover', e => {
+  if (!isDragSelecting || !selStart) return;
+  const cellEl = e.target.closest('.ag-cell');
+  const rowEl  = e.target.closest('.ag-row');
+  if (!cellEl || !rowEl) return;
+  const colId    = cellEl.getAttribute('col-id');
+  const rowIndex = parseInt(rowEl.getAttribute('row-index'));
+  if (isNaN(rowIndex) || !colId) return;
+  const cols     = getDataCols();
+  const colIndex = cols.indexOf(colId);
+  if (colIndex === -1) return;
+  selEnd = { rowIndex, colIndex };
+  drawSelOverlay();
+});
+
+document.addEventListener('mouseup', () => { isDragSelecting = false; });
+
+document.addEventListener('copy', e => {
+  if (!gridApi || !selStart) return;
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+  const bounds = getSelBounds();
+  if (!bounds) return;
+  const cols = getDataCols();
+  copyBuffer = [];
+  const rowMap = {};
+  gridApi.forEachNode(node => { rowMap[node.rowIndex] = node.data; });
+  for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+    const rowVals = [];
+    for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+      rowVals.push(rowMap[r]?.[cols[c]] ?? '');
+    }
+    copyBuffer.push(rowVals);
+  }
+  const tsv = copyBuffer.map(row => row.join('\t')).join('\r\n');
+  e.clipboardData.setData('text/plain', tsv);
+  drawSelOverlay();
+  const cells = (bounds.maxRow - bounds.minRow + 1) * (bounds.maxCol - bounds.minCol + 1);
+  toast(`Copiado: ${cells} célula(s) ✓`, 'info');
+});
+
+document.addEventListener('paste', e => {
+  if (!gridApi || !selStart) return;
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+  const text = e.clipboardData?.getData('text/plain');
+  if (!text) return;
+  copyBuffer = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(r => r.length > 0).map(row => row.split('\t'));
+  pasteSelection();
+});
+
+function pasteSelection() {
+  if (!copyBuffer || !selStart) return;
+  const cols = getDataCols();
+  const pasteStartRow = Math.min(selStart.rowIndex, selEnd?.rowIndex ?? selStart.rowIndex);
+  const pasteStartCol = Math.min(selStart.colIndex, selEnd?.colIndex ?? selStart.colIndex);
+
+  // Build current row map
+  const rowMap = {};
+  gridApi.forEachNode(node => { rowMap[node.rowIndex] = node; });
+  const totalRows = Object.keys(rowMap).length;
+
+  // Get column info for inserting new rows
+  const colInfo = db.exec(`PRAGMA table_info("${currentTable}")`)[0]?.values ?? [];
+
+  // First pass: create missing rows in DB then update with pasted values
+  let newRowsCreated = 0;
+  for (let r = 0; r < copyBuffer.length; r++) {
+    const targetRow = pasteStartRow + r;
+    if (!rowMap[targetRow]) {
+      try {
+        // Insert empty row respecting constraints
+        const insertCols = [], insertVals = [];
+        cols.forEach(col => {
+          const info    = colInfo.find(row => row[1] === col);
+          const isPk    = info?.[5] > 0;
+          const hasDflt = info?.[4] !== null;
+          const notNull = info?.[3] === 1;
+          if (isPk || hasDflt) return;
+          const type = (info?.[2] ?? '').toUpperCase();
+          insertCols.push(`"${col}"`);
+          insertVals.push(notNull ? (type.includes('INT') || type.includes('REAL') || type.includes('NUM') ? 0 : '') : null);
+        });
+
+        if (insertCols.length === 0) {
+          db.run(`INSERT INTO "${currentTable}" DEFAULT VALUES`);
+        } else {
+          db.run(
+            `INSERT INTO "${currentTable}" (${insertCols.join(',')}) VALUES (${insertCols.map(()=>'?').join(',')})`,
+            insertVals
+          );
+        }
+
+        // Now UPDATE the pasted columns on the row we just inserted
+        const lastRowid = db.exec(`SELECT last_insert_rowid()`)[0].values[0][0];
+        const setCols = [], setVals = [];
+        for (let c = 0; c < copyBuffer[r].length; c++) {
+          const targetCol = pasteStartCol + c;
+          if (targetCol >= cols.length) continue;
+          setCols.push(`"${cols[targetCol]}" = ?`);
+          setVals.push(copyBuffer[r][c]);
+        }
+        if (setCols.length) {
+          setVals.push(lastRowid);
+          db.run(`UPDATE "${currentTable}" SET ${setCols.join(', ')} WHERE rowid = ?`, setVals);
+        }
+
+        newRowsCreated++;
+      } catch(e) { toast('Erro ao criar linha: ' + e.message, 'error'); return; }
+    }
+  }
+
+  // If new rows were created, reload table to get fresh rowMap
+  if (newRowsCreated > 0) {
+    loadTable(currentTable);
+    toast(`${newRowsCreated} linha(s) criada(s) e coladas ✓`, 'success');
+    return;
+  }
+
+  // Second pass: update existing rows
+  const pasteBatch = [], toUpdate = [];
+  for (let r = 0; r < copyBuffer.length; r++) {
+    for (let c = 0; c < copyBuffer[r].length; c++) {
+      const targetRow = pasteStartRow + r, targetCol = pasteStartCol + c;
+      if (targetCol >= cols.length) continue;
+      const node = rowMap[targetRow];
+      if (!node) continue;
+      const colField = cols[targetCol];
+      const oldValue = node.data[colField], newValue = copyBuffer[r][c];
+      pasteBatch.push({ rowIndex: targetRow, colField, oldValue, newValue, dataIndex: node.data.__rowIndex });
+      node.data[colField] = newValue;
+      if (!toUpdate.includes(node.data)) toUpdate.push(node.data);
+      if (node.data.__rowIndex !== undefined) {
+        if (!pendingChanges.has(node.data.__rowIndex)) pendingChanges.set(node.data.__rowIndex, {});
+        pendingChanges.get(node.data.__rowIndex)[colField] = newValue;
+      }
+    }
+  }
+  if (pasteBatch.length) {
+    undoStack.push({ batch: pasteBatch }); redoStack = [];
+    gridApi.applyTransaction({ update: toUpdate });
+    updateChangesPill();
+    selEnd = { rowIndex: pasteStartRow + copyBuffer.length - 1, colIndex: pasteStartCol + copyBuffer[0].length - 1 };
+    drawSelOverlay();
+    toast(`Colado: ${pasteBatch.length} célula(s) ✓`, 'success');
+  }
+}
+</script>
+</body>
+</html>
