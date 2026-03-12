@@ -216,6 +216,7 @@
     </div>
     <div class="header-actions">
       <span class="status-badge" id="status-badge">Nenhum arquivo</span>
+      <button class="btn btn-ghost" id="btn-global-search" disabled>🔎 Busca Global</button>
       <button class="btn btn-ghost" id="btn-find-replace" disabled>🔍 Find &amp; Replace</button>
       <button class="btn btn-ghost" id="btn-add-row" disabled>＋ Nova Linha</button>
       <button class="btn btn-ghost" id="btn-replicate" disabled>⧉ Replicar Linhas</button>
@@ -347,6 +348,20 @@
   </div>
 </div>
 
+<!-- Global Search Modal -->
+<div class="modal-overlay hidden" id="modal-search">
+  <div class="modal" style="width:700px;max-height:80vh;display:flex;flex-direction:column;">
+    <h3>Busca Global</h3>
+    <div class="form-group">
+      <input type="text" id="global-search-input" placeholder="Digite o valor para buscar em todas as tabelas..." />
+    </div>
+    <div id="global-search-results" style="flex:1;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:11px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="global-search-close">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file-input" accept=".sqlite,.db,.sqlite3" />
 
 <script>
@@ -406,6 +421,11 @@ document.getElementById('quick-filter').addEventListener('input', e => {
 });
 document.getElementById('fr-cancel').addEventListener('click', () => document.getElementById('modal-fr').classList.add('hidden'));
 document.getElementById('fr-apply').addEventListener('click', applyFindReplace);
+document.getElementById('btn-global-search').addEventListener('click', openGlobalSearch);
+document.getElementById('global-search-close').addEventListener('click', () => document.getElementById('modal-search').classList.add('hidden'));
+document.getElementById('global-search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runGlobalSearch();
+});
 
 document.getElementById('review-cancel').addEventListener('click', () => {
   document.getElementById('modal-review').classList.add('hidden');
@@ -551,7 +571,7 @@ function loadTable(tableName) {
   document.getElementById('footer-table').textContent = tableName;
   document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
   document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
-  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql'].forEach(id =>
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
 }
@@ -1330,6 +1350,62 @@ function pasteSelection() {
     drawSelOverlay();
     toast(`Colado: ${pasteBatch.length} célula(s) ✓`, 'success');
   }
+}
+
+// ── GLOBAL SEARCH ──────────────────────────────────────────────────────────
+function openGlobalSearch() {
+  document.getElementById('modal-search').classList.remove('hidden');
+  document.getElementById('global-search-input').value = '';
+  document.getElementById('global-search-results').innerHTML = '';
+  document.getElementById('global-search-input').focus();
+}
+
+function runGlobalSearch() {
+  if (!db) return;
+  const term = document.getElementById('global-search-input').value.trim();
+  if (!term) return;
+  const resultsDiv = document.getElementById('global-search-results');
+  resultsDiv.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Buscando...</div>';
+
+  const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+  if (!tables.length) { resultsDiv.innerHTML = 'Nenhuma tabela'; return; }
+
+  let html = '';
+  let totalFound = 0;
+
+  tables[0].values.forEach(([tableName]) => {
+    const colsResult = db.exec(`PRAGMA table_info("${tableName}")`);
+    if (!colsResult.length) return;
+    const cols = colsResult[0].values.map(r => r[1]);
+    const whereClauses = cols.map(c => `CAST("${c}" AS TEXT) LIKE ?`).join(' OR ');
+    const params = cols.map(() => `%${term}%`);
+    try {
+      const found = db.exec(`SELECT * FROM "${tableName}" WHERE ${whereClauses} LIMIT 50`, params);
+      if (found.length && found[0].values.length) {
+        const count = found[0].values.length;
+        totalFound += count;
+        html += `<div style="margin:12px 0 6px;font-weight:700;color:var(--accent);">${tableName} (${count} resultado${count>1?'s':''})</div>`;
+        found[0].values.forEach(row => {
+          const matchCols = [];
+          cols.forEach((col, i) => {
+            if (String(row[i] ?? '').toLowerCase().includes(term.toLowerCase())) {
+              matchCols.push(`<span style="color:var(--text);">${col}</span>=<span style="color:#66aa66;">${row[i]}</span>`);
+            }
+          });
+          html += `<div style="padding:4px 10px;border-left:2px solid var(--border);margin:2px 0;cursor:pointer;" onclick="jumpToTable('${tableName}')">${matchCols.join(' | ')}</div>`;
+        });
+      }
+    } catch(e) { /* skip problematic tables */ }
+  });
+
+  if (!totalFound) html = '<div style="color:var(--text-muted);padding:16px;text-align:center;">Nenhum resultado encontrado</div>';
+  else html = `<div style="margin-bottom:8px;color:var(--text-muted);">${totalFound} resultado(s) encontrado(s)</div>` + html;
+  resultsDiv.innerHTML = html;
+}
+
+function jumpToTable(tableName) {
+  document.getElementById('modal-search').classList.add('hidden');
+  loadTable(tableName);
 }
 </script>
 </body>
