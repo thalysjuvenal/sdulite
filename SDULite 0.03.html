@@ -224,6 +224,7 @@
       <button class="btn btn-ghost" id="btn-replicate" disabled>⧉ Replicar Linhas</button>
       <button class="btn btn-danger" id="btn-delete-rows" disabled>✕ Deletar Seleção</button>
       <button class="btn btn-ghost" id="btn-formula" disabled>ƒ Formula</button>
+      <button class="btn btn-ghost" id="btn-templates" disabled>📑 Templates</button>
       <div class="toolbar-sep"></div>
       <button class="btn btn-ghost" id="btn-readonly" disabled>🔒 Somente Leitura</button>
       <label for="file-input" class="btn btn-primary">📂 Abrir arquivo</label>
@@ -336,6 +337,7 @@
       </div>
     </div>
     <div class="modal-actions">
+      <button class="btn btn-ghost" id="fr-save-template">💾 Salvar Template</button>
       <button class="btn btn-ghost" id="fr-cancel">Cancelar</button>
       <button class="btn btn-primary" id="fr-apply">Aplicar</button>
     </div>
@@ -404,6 +406,17 @@
   </div>
 </div>
 
+<!-- Templates Modal -->
+<div class="modal-overlay hidden" id="modal-templates">
+  <div class="modal" style="width:550px;max-height:80vh;display:flex;flex-direction:column;">
+    <h3>Templates de Operacao</h3>
+    <div id="templates-list" style="flex:1;overflow-y:auto;margin-bottom:16px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="templates-close">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file-input" accept=".sqlite,.db,.sqlite3" />
 
 <script>
@@ -418,6 +431,7 @@ let readOnlyMode = false;
 let originalValues = new Map(); // Map<"rowIndex:colField", originalValue>
 let changeHistory = []; // Array de { table, col, rowIndex, oldValue, newValue, timestamp }
 let bookmarks = []; // Array de { table, rowIndex, label }
+let operationTemplates = JSON.parse(localStorage.getItem('sdulite-templates') || '[]');
 
 // ── INIT SQL.JS ───────────────────────────────────────────────────────────────
 initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${f}` })
@@ -481,6 +495,9 @@ document.getElementById('btn-formula').addEventListener('click', openFormula);
 document.getElementById('formula-cancel').addEventListener('click', () => document.getElementById('modal-formula').classList.add('hidden'));
 document.getElementById('formula-apply').addEventListener('click', applyFormula);
 document.getElementById('formula-type').addEventListener('change', updateFormulaParams);
+document.getElementById('btn-templates').addEventListener('click', showTemplates);
+document.getElementById('templates-close').addEventListener('click', () => document.getElementById('modal-templates').classList.add('hidden'));
+document.getElementById('fr-save-template').addEventListener('click', saveTemplate);
 
 document.getElementById('review-cancel').addEventListener('click', () => {
   document.getElementById('modal-review').classList.add('hidden');
@@ -626,7 +643,7 @@ function loadTable(tableName) {
   document.getElementById('footer-table').textContent = tableName;
   document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
   document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
-  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-formula','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search','btn-bookmark','btn-bookmarks','btn-export'].forEach(id =>
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-formula','btn-templates','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search','btn-bookmark','btn-bookmarks','btn-export'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
   const importLabel = document.getElementById('btn-import-label');
@@ -940,6 +957,59 @@ function applyFindReplace() {
   updateChangesPill();
   document.getElementById('modal-fr').classList.add('hidden');
   toast(`${batch.length} substituição(ões) feita(s)`, batch.length > 0 ? 'success' : 'info');
+}
+
+// ── TEMPLATES ──────────────────────────────────────────────────────────────
+function saveTemplate() {
+  const name = prompt('Nome do template:');
+  if (!name) return;
+  operationTemplates.push({
+    name,
+    filterCol: document.getElementById('fr-filter-col').value,
+    filterVal: document.getElementById('fr-filter-val').value,
+    replaceCol: document.getElementById('fr-column').value,
+    replaceVal: document.getElementById('fr-replace').value,
+  });
+  localStorage.setItem('sdulite-templates', JSON.stringify(operationTemplates));
+  toast('Template salvo: ' + name, 'success');
+}
+
+function showTemplates() {
+  const list = document.getElementById('templates-list');
+  if (!operationTemplates.length) {
+    list.innerHTML = '<div style="padding:16px;font-size:12px;color:var(--text-muted);text-align:center;">Nenhum template salvo.<br>Crie templates pelo Find & Replace.</div>';
+  } else {
+    list.innerHTML = operationTemplates.map((t, i) => `
+      <div style="padding:10px;border:1px solid var(--border);border-radius:7px;margin:4px 0;font-family:'JetBrains Mono',monospace;font-size:11px;">
+        <div style="font-weight:700;color:var(--accent);margin-bottom:4px;">${t.name}</div>
+        <div style="color:var(--text-muted);">
+          ${t.filterVal ? `Onde ${t.filterCol} = "${t.filterVal}" → ` : 'Todas as linhas → '}
+          ${t.replaceCol} = "${t.replaceVal}"
+        </div>
+        <div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end;">
+          <button class="btn btn-primary" style="padding:3px 10px;font-size:10px;" onclick="executeTemplate(${i})">▶ Executar</button>
+          <button class="btn btn-danger" style="padding:3px 10px;font-size:10px;" onclick="deleteTemplate(${i})">✕</button>
+        </div>
+      </div>
+    `).join('');
+  }
+  document.getElementById('modal-templates').classList.remove('hidden');
+}
+
+function executeTemplate(index) {
+  const t = operationTemplates[index];
+  document.getElementById('fr-filter-col').value = t.filterCol;
+  document.getElementById('fr-filter-val').value = t.filterVal;
+  document.getElementById('fr-column').value = t.replaceCol;
+  document.getElementById('fr-replace').value = t.replaceVal;
+  document.getElementById('modal-templates').classList.add('hidden');
+  applyFindReplace();
+}
+
+function deleteTemplate(index) {
+  operationTemplates.splice(index, 1);
+  localStorage.setItem('sdulite-templates', JSON.stringify(operationTemplates));
+  showTemplates();
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
