@@ -1157,6 +1157,36 @@ function getSelBounds() {
   };
 }
 
+function getSelectionSingleColumn() {
+  const bounds = getSelBounds();
+  if (!bounds || bounds.minCol !== bounds.maxCol) return null;
+  return { colIndex: bounds.minCol, minRow: bounds.minRow, maxRow: bounds.maxRow };
+}
+
+function applyBulkEdit(sel, colName, newValue) {
+  const batch = [], toUpdate = [];
+  gridApi.forEachNode(node => {
+    if (node.rowIndex >= sel.minRow && node.rowIndex <= sel.maxRow) {
+      const oldValue = node.data[colName];
+      batch.push({ rowIndex: node.rowIndex, colField: colName, oldValue, newValue, dataIndex: node.data.__rowIndex });
+      node.data[colName] = newValue;
+      toUpdate.push(node.data);
+      if (node.data.__rowIndex !== undefined) {
+        if (!pendingChanges.has(node.data.__rowIndex)) pendingChanges.set(node.data.__rowIndex, {});
+        pendingChanges.get(node.data.__rowIndex)[colName] = newValue;
+      }
+      addToHistory(currentTable, colName, node.data.__rowIndex, oldValue, newValue);
+    }
+  });
+  if (batch.length) {
+    undoStack.push({ batch }); redoStack = [];
+    gridApi.applyTransaction({ update: toUpdate });
+    updateChangesPill();
+    updateUndoPill();
+    toast(`${batch.length} celula(s) editada(s) em lote`, 'success');
+  }
+}
+
 function removeSelOverlay() {
   if (selOverlayEl) { selOverlayEl.remove(); selOverlayEl = null; }
 }
@@ -1223,6 +1253,18 @@ document.addEventListener('mouseover', e => {
 });
 
 document.addEventListener('mouseup', () => { isDragSelecting = false; });
+
+document.getElementById('grid').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const sel = getSelectionSingleColumn();
+  if (!sel || sel.minRow === sel.maxRow) return;
+  const cols = getDataCols();
+  const colName = cols[sel.colIndex];
+  const count = sel.maxRow - sel.minRow + 1;
+  const newValue = prompt(`Novo valor para ${count} celulas na coluna "${colName}":`);
+  if (newValue === null) return;
+  applyBulkEdit(sel, colName, newValue);
+});
 
 document.addEventListener('copy', e => {
   if (!gridApi || !selStart) return;
