@@ -292,6 +292,18 @@
   </div>
 </div>
 
+<!-- Save Review Modal -->
+<div class="modal-overlay hidden" id="modal-review">
+  <div class="modal" style="width:600px;max-height:80vh;display:flex;flex-direction:column;">
+    <h3>Revisar Alteracoes</h3>
+    <div id="review-list" style="flex:1;overflow-y:auto;margin-bottom:16px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="review-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="review-confirm">Confirmar e Salvar</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file-input" accept=".sqlite,.db,.sqlite3" />
 
 <script>
@@ -345,6 +357,37 @@ document.getElementById('quick-filter').addEventListener('input', e => {
 });
 document.getElementById('fr-cancel').addEventListener('click', () => document.getElementById('modal-fr').classList.add('hidden'));
 document.getElementById('fr-apply').addEventListener('click', applyFindReplace);
+
+document.getElementById('review-cancel').addEventListener('click', () => {
+  document.getElementById('modal-review').classList.add('hidden');
+});
+
+document.getElementById('review-confirm').addEventListener('click', () => {
+  // Remove unchecked changes from pendingChanges
+  const unchecked = document.querySelectorAll('#review-list input[type="checkbox"]:not(:checked)');
+  unchecked.forEach(cb => {
+    const row = parseInt(cb.dataset.row);
+    const col = cb.dataset.col;
+    if (pendingChanges.has(row)) {
+      delete pendingChanges.get(row)[col];
+      if (Object.keys(pendingChanges.get(row)).length === 0) pendingChanges.delete(row);
+      // Revert the unchecked change in grid
+      const origKey = `${row}:${col}`;
+      if (originalValues.has(origKey)) {
+        gridApi.forEachNode(node => {
+          if (node.data.__rowIndex === row) {
+            node.data[col] = originalValues.get(origKey);
+            gridApi.applyTransaction({ update: [node.data] });
+          }
+        });
+        originalValues.delete(origKey);
+      }
+    }
+  });
+  updateChangesPill();
+  document.getElementById('modal-review').classList.add('hidden');
+  executeSave();
+});
 
 // ── READ-ONLY TOGGLE ─────────────────────────────────────────────────────────
 function toggleReadOnly() {
@@ -521,6 +564,31 @@ function updateChangesPill() {
 
 // ── SAVE FILE ─────────────────────────────────────────────────────────────────
 function saveFile() {
+  if (!db || !currentTable || !gridApi) return;
+  if (pendingChanges.size === 0) { toast('Nenhuma alteracao pendente', 'info'); return; }
+
+  const list = document.getElementById('review-list');
+  let html = '<div style="font-size:11px;font-family:\'JetBrains Mono\',monospace;">';
+  pendingChanges.forEach((changes, rowIdx) => {
+    Object.entries(changes).forEach(([col, newVal]) => {
+      const origKey = `${rowIdx}:${col}`;
+      const oldVal = originalValues.get(origKey) ?? '?';
+      html += `<div style="padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;">
+        <input type="checkbox" checked data-row="${rowIdx}" data-col="${col}" style="accent-color:var(--accent);">
+        <span style="color:var(--text-muted);min-width:60px;">Linha ${rowIdx}</span>
+        <span style="color:var(--accent);min-width:100px;">${col}</span>
+        <span style="color:#aa6666;text-decoration:line-through;">${oldVal ?? '(vazio)'}</span>
+        <span style="color:var(--text-muted);">→</span>
+        <span style="color:#66aa66;">${newVal ?? '(vazio)'}</span>
+      </div>`;
+    });
+  });
+  html += '</div>';
+  list.innerHTML = html;
+  document.getElementById('modal-review').classList.remove('hidden');
+}
+
+function executeSave() {
   if (!db || !currentTable || !gridApi) return;
   try {
     const pkCol = db.exec(`PRAGMA table_info("${currentTable}")`)[0]?.values.find(r => r[5] > 0)?.[1];
