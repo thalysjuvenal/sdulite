@@ -216,6 +216,8 @@
     </div>
     <div class="header-actions">
       <span class="status-badge" id="status-badge">Nenhum arquivo</span>
+      <button class="btn btn-ghost" id="btn-bookmark" disabled>★ Favoritar</button>
+      <button class="btn btn-ghost" id="btn-bookmarks" disabled>☆ Favoritos</button>
       <button class="btn btn-ghost" id="btn-global-search" disabled>🔎 Busca Global</button>
       <button class="btn btn-ghost" id="btn-find-replace" disabled>🔍 Find &amp; Replace</button>
       <button class="btn btn-ghost" id="btn-add-row" disabled>＋ Nova Linha</button>
@@ -375,6 +377,7 @@ let originalDbBytes = null; // backup do arquivo original
 let readOnlyMode = false;
 let originalValues = new Map(); // Map<"rowIndex:colField", originalValue>
 let changeHistory = []; // Array de { table, col, rowIndex, oldValue, newValue, timestamp }
+let bookmarks = []; // Array de { table, rowIndex, label }
 
 // ── INIT SQL.JS ───────────────────────────────────────────────────────────────
 initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${f}` })
@@ -422,6 +425,8 @@ document.getElementById('quick-filter').addEventListener('input', e => {
 document.getElementById('fr-cancel').addEventListener('click', () => document.getElementById('modal-fr').classList.add('hidden'));
 document.getElementById('fr-apply').addEventListener('click', applyFindReplace);
 document.getElementById('btn-global-search').addEventListener('click', openGlobalSearch);
+document.getElementById('btn-bookmark').addEventListener('click', bookmarkSelected);
+document.getElementById('btn-bookmarks').addEventListener('click', showBookmarks);
 document.getElementById('global-search-close').addEventListener('click', () => document.getElementById('modal-search').classList.add('hidden'));
 document.getElementById('global-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') runGlobalSearch();
@@ -571,7 +576,7 @@ function loadTable(tableName) {
   document.getElementById('footer-table').textContent = tableName;
   document.getElementById('footer-rows').textContent = `${rows.length} linhas`;
   document.getElementById('footer-cols').textContent = `${cols.length} colunas`;
-  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search'].forEach(id =>
+  ['btn-save','btn-add-row','btn-replicate','btn-delete-rows','btn-find-replace','btn-restore','btn-readonly','btn-history','btn-sql','btn-global-search','btn-bookmark','btn-bookmarks'].forEach(id =>
     document.getElementById(id).removeAttribute('disabled')
   );
 }
@@ -1406,6 +1411,76 @@ function runGlobalSearch() {
 function jumpToTable(tableName) {
   document.getElementById('modal-search').classList.add('hidden');
   loadTable(tableName);
+}
+
+// ── BOOKMARKS ──────────────────────────────────────────────────────────────
+function bookmarkSelected() {
+  if (!gridApi || !currentTable) return;
+  const selected = gridApi.getSelectedRows();
+  if (!selected.length) { toast('Selecione linhas para favoritar', 'info'); return; }
+  selected.forEach(row => {
+    const exists = bookmarks.find(b => b.table === currentTable && b.rowIndex === row.__rowIndex);
+    if (!exists) {
+      const cols = columnDefs.slice(1, 4).map(c => c.field);
+      const preview = cols.map(c => `${c}=${row[c] ?? ''}`).join(', ');
+      bookmarks.push({ table: currentTable, rowIndex: row.__rowIndex, label: preview });
+    }
+  });
+  toast(`${selected.length} linha(s) favoritada(s)`, 'success');
+}
+
+function showBookmarks() {
+  if (!bookmarks.length) { toast('Nenhum favorito salvo', 'info'); return; }
+  // Use a simple modal approach - reuse modal-search structure
+  const modal = document.getElementById('modal-search');
+  const title = modal.querySelector('h3');
+  const input = document.getElementById('global-search-input');
+  const resultsDiv = document.getElementById('global-search-results');
+
+  title.textContent = 'Favoritos';
+  input.style.display = 'none';
+
+  let html = '';
+  bookmarks.forEach((b, i) => {
+    html += `<div style="padding:8px 10px;border:1px solid var(--border);border-radius:7px;margin:4px 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="jumpToBookmark(${i})">
+      <div><span style="color:var(--accent);font-weight:600;">${b.table}</span> <span style="color:var(--text-muted);font-size:10px;">linha ${b.rowIndex}</span><br><span style="font-size:10px;color:var(--text-muted);">${b.label}</span></div>
+      <button class="btn btn-ghost" style="padding:2px 8px;font-size:10px;" onclick="event.stopPropagation();removeBookmark(${i})">✕</button>
+    </div>`;
+  });
+  resultsDiv.innerHTML = html;
+  modal.classList.remove('hidden');
+
+  // Override close to restore modal state
+  const closeBtn = document.getElementById('global-search-close');
+  const originalClose = closeBtn.onclick;
+  closeBtn.onclick = () => {
+    modal.classList.add('hidden');
+    title.textContent = 'Busca Global';
+    input.style.display = '';
+    closeBtn.onclick = originalClose;
+  };
+}
+
+function jumpToBookmark(index) {
+  const b = bookmarks[index];
+  document.getElementById('modal-search').classList.add('hidden');
+  // Restore modal state
+  document.getElementById('modal-search').querySelector('h3').textContent = 'Busca Global';
+  document.getElementById('global-search-input').style.display = '';
+  if (currentTable !== b.table) loadTable(b.table);
+  if (gridApi) {
+    gridApi.forEachNode(node => {
+      if (node.data.__rowIndex === b.rowIndex) {
+        gridApi.ensureNodeVisible(node, 'middle');
+        node.setSelected(true);
+      }
+    });
+  }
+}
+
+function removeBookmark(index) {
+  bookmarks.splice(index, 1);
+  showBookmarks();
 }
 </script>
 </body>
